@@ -8,12 +8,14 @@ import {
 import React, { useState, useEffect } from "react";
 import { FormData } from "@/lib/types";
 import DevicePreview from "./DevicePreview";
-import { uploadToS3 } from "@/lib/upload";
-import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
+import { getErrorMessage, logError } from "@/lib/error-utils";
+import { persistDigitalPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
+import { uploadWithOptimistic } from "@/lib/builder/upload";
 
 interface DigitalProductFlowProps {
     formData: FormData;
-    setFormData: (data: any) => void;
+    patchFormData: (patch: Partial<FormData>) => void;
+    updateFormData: (updater: (prev: FormData) => FormData) => void;
     step: number;
     onNext: () => void;
     onBack: () => void;
@@ -24,7 +26,7 @@ interface DigitalProductFlowProps {
 }
 
 export default function DigitalProductFlow({
-    formData, setFormData, step, onNext, onBack, onCancel, isLive, setIsLive
+    formData, patchFormData, updateFormData, step, onNext, onBack, onCancel, isLive, setIsLive
 }: DigitalProductFlowProps) {
     const [device, setDevice] = useState<"laptop" | "phone">("laptop");
     const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -52,39 +54,10 @@ export default function DigitalProductFlow({
             await new Promise(resolve => setTimeout(resolve, 800));
         }
 
-        // SAVE DATA FOR PERSISTENCE
-        const slug = formData.customPageUrl || formData.title?.toLowerCase().replace(/[^a-z0-9]/g, '-') || "my-website";
-        localStorage.setItem(`website_${slug}`, JSON.stringify(formData));
+        const { websiteEntry } = persistDigitalPublish(formData);
 
-        // Update Dashboard List
-        const existingList = JSON.parse(localStorage.getItem('websites_list') || '[]');
-        const websiteEntry = {
-            title: formData.title || "Untitled Website",
-            price: `₹${formData.price || "0"}`,
-            sale: "0",
-            revenue: "₹0",
-            status: "Active",
-            image: formData.coverImage || "https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=2426",
-            lastModified: "Just now",
-            slug: slug,
-            type: "digital"
-        };
-
-        const updatedList = [websiteEntry, ...existingList.filter((site: any) => site.slug !== slug)];
-        localStorage.setItem('websites_list', JSON.stringify(updatedList));
-
-        // SYNC TO S3 FOR SEARCH OPTIMIZATION
         try {
-            const response = await fetch('/api/websites', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ formData, websiteEntry })
-            });
-
-            if (!response.ok) {
-                const errorPayload = await response.json().catch(() => null);
-                throw new Error(extractApiErrorMessage(errorPayload, "Failed to sync website index."));
-            }
+            await syncPublishedWebsiteIndex(formData, websiteEntry);
         } catch (err) {
             logError("digital flow publish sync", err);
         }
@@ -96,25 +69,28 @@ export default function DigitalProductFlow({
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string, isArray: boolean = false) => {
         const file = e.target.files?.[0];
         if (file) {
-            // Optimistic Update: Show local image immediately
-            const localUrl = URL.createObjectURL(file);
-            if (isArray) {
-                const currentArr = (formData as any)[field] || [];
-                setFormData({ ...formData, [field]: [...currentArr, localUrl] });
-            } else {
-                setFormData({ ...formData, [field]: localUrl });
-            }
-
             setIsUploading(true);
             try {
-                const s3Url = await uploadToS3(file, field);
-                // Replace local URL with S3 URL
-                setFormData((prev: FormData) => {
-                    if (isArray) {
-                        const currentArr = (prev as any)[field] || [];
-                        return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? s3Url : url) };
-                    } else {
-                        return { ...prev, [field]: s3Url };
+                await uploadWithOptimistic({
+                    file,
+                    uploadKey: field,
+                    applyLocal: (localUrl) => {
+                        if (isArray) {
+                            const currentArr = (formData as any)[field] || [];
+                            patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
+                        } else {
+                            patchFormData({ [field]: localUrl } as Partial<FormData>);
+                        }
+                    },
+                    applyRemote: (remoteUrl, localUrl) => {
+                        updateFormData((prev: FormData) => {
+                            if (isArray) {
+                                const currentArr = (prev as any)[field] || [];
+                                return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
+                            }
+
+                            return { ...prev, [field]: remoteUrl };
+                        });
                     }
                 });
             } catch (err) {
@@ -129,25 +105,23 @@ export default function DigitalProductFlow({
 
     const addFAQ = () => {
         const currentFAQs = formData.faqs || [];
-        setFormData({ ...formData, faqs: [...currentFAQs, { question: "", answer: "" }] });
+        patchFormData({ faqs: [...currentFAQs, { question: "", answer: "" }] });
     };
 
     const updateFAQ = (index: number, field: "question" | "answer", value: string) => {
         const newFAQs = [...(formData.faqs || [])];
         newFAQs[index] = { ...newFAQs[index], [field]: value };
-        setFormData({ ...formData, faqs: newFAQs });
+        patchFormData({ faqs: newFAQs });
     };
 
     const removeFAQ = (index: number) => {
         const newFAQs = (formData.faqs || []).filter((_, i) => i !== index);
-        setFormData({ ...formData, faqs: newFAQs });
+        patchFormData({ faqs: newFAQs });
     };
 
     const addProduct = () => {
         const currentProducts = formData.products || [];
-        setFormData({
-            ...formData,
-            products: [...currentProducts, { id: Math.random().toString(36).substr(2, 9), title: "", description: "", price: "", image: "" }]
+        patchFormData({ products: [...currentProducts, { id: Math.random().toString(36).substr(2, 9), title: "", description: "", price: "", image: "" }]
         });
     };
 
@@ -155,25 +129,29 @@ export default function DigitalProductFlow({
         const newProducts = (formData.products || []).map(p =>
             p.id === id ? { ...p, [field]: value } : p
         );
-        setFormData({ ...formData, products: newProducts });
+        patchFormData({ products: newProducts });
     };
 
     const removeProduct = (id: string) => {
         const newProducts = (formData.products || []).filter(p => p.id !== id);
-        setFormData({ ...formData, products: newProducts });
+        patchFormData({ products: newProducts });
     };
 
     const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, id: string) => {
         const file = e.target.files?.[0];
         if (file) {
-            // Optimistic Update
-            const localUrl = URL.createObjectURL(file);
-            updateProduct(id, 'image', localUrl);
-
             setIsUploading(true);
             try {
-                const s3Url = await uploadToS3(file, 'products');
-                updateProduct(id, 'image', s3Url);
+                await uploadWithOptimistic({
+                    file,
+                    uploadKey: "products",
+                    applyLocal: (localUrl) => {
+                        updateProduct(id, "image", localUrl);
+                    },
+                    applyRemote: (remoteUrl) => {
+                        updateProduct(id, "image", remoteUrl);
+                    }
+                });
             } catch (err) {
                 logError("digital flow product image upload", err);
                 alert(getErrorMessage(err, "Failed to upload image."));
@@ -400,7 +378,7 @@ export default function DigitalProductFlow({
                                 <input
                                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all placeholder:text-gray-300 shadow-sm"
                                     value={formData.title}
-                                    onChange={e => setFormData({ ...formData, title: e.target.value })}
+                                    onChange={e => patchFormData({ title: e.target.value })}
                                     placeholder="Website Page Title"
                                 />
                             </div>
@@ -429,7 +407,7 @@ export default function DigitalProductFlow({
                                                     onChange={(e) => setTempCoverLink(e.target.value)}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter' && tempCoverLink) {
-                                                            setFormData({ ...formData, coverImage: tempCoverLink });
+                                                            patchFormData({ coverImage: tempCoverLink });
                                                             setTempCoverLink("");
                                                         }
                                                     }}
@@ -437,7 +415,7 @@ export default function DigitalProductFlow({
                                                 <button
                                                     onClick={() => {
                                                         if (tempCoverLink) {
-                                                            setFormData({ ...formData, coverImage: tempCoverLink });
+                                                            patchFormData({ coverImage: tempCoverLink });
                                                             setTempCoverLink("");
                                                         }
                                                     }}
@@ -470,7 +448,7 @@ export default function DigitalProductFlow({
                                         className="w-full h-40 px-5 py-5 text-[14px] font-bold outline-none resize-none placeholder:text-gray-200"
                                         placeholder="Start typing..."
                                         value={formData.description}
-                                        onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                        onChange={e => patchFormData({ description: e.target.value })}
                                     />
                                 </div>
                             </div>
@@ -481,7 +459,7 @@ export default function DigitalProductFlow({
                                 <input
                                     className="w-full px-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                     value={formData.cta}
-                                    onChange={e => setFormData({ ...formData, cta: e.target.value })}
+                                    onChange={e => patchFormData({ cta: e.target.value })}
                                 />
                             </div>
 
@@ -519,7 +497,7 @@ export default function DigitalProductFlow({
                                                                     className="w-full px-5 py-3.5 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                                     placeholder="Enter gallery title"
                                                                     value={formData.galleryTitle || ""}
-                                                                    onChange={e => setFormData({ ...formData, galleryTitle: e.target.value })}
+                                                                    onChange={e => patchFormData({ galleryTitle: e.target.value })}
                                                                 />
                                                             </div>
                                                             <div className="space-y-2">
@@ -529,7 +507,7 @@ export default function DigitalProductFlow({
                                                                         <div key={i} className="aspect-square rounded-lg overflow-hidden border border-gray-100 relative group">
                                                                             <img src={img} className="w-full h-full object-cover" />
                                                                             <button
-                                                                                onClick={() => setFormData({ ...formData, galleryImages: formData.galleryImages?.filter((_, idx) => idx !== i) })}
+                                                                                onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_, idx) => idx !== i) })}
                                                                                 className="absolute top-1 right-1 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                                                             >
                                                                                 <X size={10} />
@@ -565,7 +543,7 @@ export default function DigitalProductFlow({
                                                                             onChange={(e) => setTempTestimonialLink(e.target.value)}
                                                                             onKeyDown={(e) => {
                                                                                 if (e.key === 'Enter' && tempTestimonialLink) {
-                                                                                    setFormData({ ...formData, testimonialImage: tempTestimonialLink });
+                                                                                    patchFormData({ testimonialImage: tempTestimonialLink });
                                                                                     setTempTestimonialLink("");
                                                                                 }
                                                                             }}
@@ -579,7 +557,7 @@ export default function DigitalProductFlow({
                                                                     className="w-full px-5 py-3.5 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                                     placeholder="Name of the person"
                                                                     value={formData.testimonialName || ""}
-                                                                    onChange={e => setFormData({ ...formData, testimonialName: e.target.value })}
+                                                                    onChange={e => patchFormData({ testimonialName: e.target.value })}
                                                                 />
                                                             </div>
                                                             <div className="space-y-2">
@@ -588,7 +566,7 @@ export default function DigitalProductFlow({
                                                                     className="w-full h-24 px-5 py-4 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm resize-none"
                                                                     placeholder="Write their testimonial..."
                                                                     value={formData.testimonialComment || ""}
-                                                                    onChange={e => setFormData({ ...formData, testimonialComment: e.target.value })}
+                                                                    onChange={e => patchFormData({ testimonialComment: e.target.value })}
                                                                 />
                                                             </div>
                                                         </div>
@@ -640,7 +618,7 @@ export default function DigitalProductFlow({
                                                                 className="w-full h-32 px-5 py-4 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm resize-none"
                                                                 placeholder="Tell your story..."
                                                                 value={formData.aboutUs || ""}
-                                                                onChange={e => setFormData({ ...formData, aboutUs: e.target.value })}
+                                                                onChange={e => patchFormData({ aboutUs: e.target.value })}
                                                             />
                                                         </div>
                                                     )}
@@ -650,7 +628,7 @@ export default function DigitalProductFlow({
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <span className="text-[13px] font-bold text-gray-900">Show Products on Page</span>
                                                                 <div
-                                                                    onClick={() => setFormData({ ...formData, showProduct: !formData.showProduct })}
+                                                                    onClick={() => patchFormData({ showProduct: !formData.showProduct })}
                                                                     className={`w-10 h-6 rounded-full transition-all relative cursor-pointer ${formData.showProduct ? 'bg-black' : 'bg-gray-200'}`}
                                                                 >
                                                                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${formData.showProduct ? 'left-5' : 'left-1'}`} />
@@ -752,7 +730,7 @@ export default function DigitalProductFlow({
                                                                     className="w-full px-5 py-3.5 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                                     placeholder="E.g. © 2024 Your Name"
                                                                     value={formData.footerText || ""}
-                                                                    onChange={e => setFormData({ ...formData, footerText: e.target.value })}
+                                                                    onChange={e => patchFormData({ footerText: e.target.value })}
                                                                 />
                                                             </div>
                                                             <div className="space-y-4">
@@ -764,7 +742,7 @@ export default function DigitalProductFlow({
                                                                             className="flex-1 bg-transparent text-[13px] font-bold outline-none"
                                                                             placeholder="Instagram handle"
                                                                             value={formData.socialInstagram || ""}
-                                                                            onChange={e => setFormData({ ...formData, socialInstagram: e.target.value })}
+                                                                            onChange={e => patchFormData({ socialInstagram: e.target.value })}
                                                                         />
                                                                     </div>
                                                                     <div className="flex items-center gap-3 px-4 py-2 bg-white border border-gray-100 rounded-xl shadow-sm">
@@ -773,7 +751,7 @@ export default function DigitalProductFlow({
                                                                             className="flex-1 bg-transparent text-[13px] font-bold outline-none"
                                                                             placeholder="Twitter handle"
                                                                             value={formData.socialTwitter || ""}
-                                                                            onChange={e => setFormData({ ...formData, socialTwitter: e.target.value })}
+                                                                            onChange={e => patchFormData({ socialTwitter: e.target.value })}
                                                                         />
                                                                     </div>
                                                                 </div>
@@ -799,12 +777,12 @@ export default function DigitalProductFlow({
                                             className="flex-1 px-4 py-2.5 text-[13px] font-bold outline-none placeholder:text-gray-300"
                                             placeholder="Add the link"
                                             value={formData.digitalFilesLink || ""}
-                                            onChange={e => setFormData({ ...formData, digitalFilesLink: e.target.value })}
+                                            onChange={e => patchFormData({ digitalFilesLink: e.target.value })}
                                         />
                                         <button
                                             onClick={() => {
                                                 if (formData.digitalFilesLink) {
-                                                    setFormData({ ...formData, digitalFilesLink: formData.digitalFilesLink });
+                                                    patchFormData({ digitalFilesLink: formData.digitalFilesLink });
                                                     alert("Link added successfully!");
                                                 }
                                             }}
@@ -839,7 +817,7 @@ export default function DigitalProductFlow({
                                 <h2 className="text-[22px] font-black tracking-tight text-gray-900">Pricing</h2>
                                 <div className="space-y-4">
                                     <div
-                                        onClick={() => setFormData({ ...formData, pricingType: "fixed" })}
+                                        onClick={() => patchFormData({ pricingType: "fixed" })}
                                         className={`p-6 border rounded-[28px] cursor-pointer transition-all ${formData.pricingType === "fixed" ? "border-blue-500 bg-white shadow-md ring-2 ring-blue-500/10" : "border-gray-100 bg-[#FCFCFD] hover:border-gray-200"}`}
                                     >
                                         <div className="flex items-center justify-between mb-1.5">
@@ -860,7 +838,7 @@ export default function DigitalProductFlow({
                                                     <input
                                                         className="w-full pl-10 pr-4 py-3.5 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                         value={formData.price}
-                                                        onChange={e => setFormData({ ...formData, price: e.target.value })}
+                                                        onChange={e => patchFormData({ price: e.target.value })}
                                                         placeholder="0"
                                                     />
                                                 </div>
@@ -872,7 +850,7 @@ export default function DigitalProductFlow({
                                                     <input
                                                         className="w-full pl-10 pr-4 py-3.5 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                         value={formData.discountPrice}
-                                                        onChange={e => setFormData({ ...formData, discountPrice: e.target.value })}
+                                                        onChange={e => patchFormData({ discountPrice: e.target.value })}
                                                         placeholder="0"
                                                     />
                                                 </div>
@@ -881,7 +859,7 @@ export default function DigitalProductFlow({
                                     )}
 
                                     <div
-                                        onClick={() => setFormData({ ...formData, pricingType: "decide" })}
+                                        onClick={() => patchFormData({ pricingType: "decide" })}
                                         className={`p-6 border rounded-[28px] cursor-pointer transition-all ${formData.pricingType === "decide" ? "border-blue-500 bg-white shadow-md ring-2 ring-blue-500/10" : "border-gray-100 bg-[#FCFCFD] hover:border-gray-200"}`}
                                     >
                                         <div className="flex items-center justify-between mb-1.5">
@@ -907,7 +885,7 @@ export default function DigitalProductFlow({
                                             <p className="text-[11px] font-bold text-gray-400">Increase your sales by 40% using PPP</p>
                                         </div>
                                         <div
-                                            onClick={() => setFormData({ ...formData, pppEnabled: !formData.pppEnabled })}
+                                            onClick={() => patchFormData({ pppEnabled: !formData.pppEnabled })}
                                             className={`w-10 h-6 rounded-full transition-all relative cursor-pointer ${formData.pppEnabled ? 'bg-black' : 'bg-gray-200'}`}
                                         >
                                             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${formData.pppEnabled ? 'left-5' : 'left-1'}`} />
@@ -920,7 +898,7 @@ export default function DigitalProductFlow({
                                             <p className="text-[11px] font-bold text-gray-400">Restrict how many times this can be bought</p>
                                         </div>
                                         <div
-                                            onClick={() => setFormData({ ...formData, limitPurchases: !formData.limitPurchases })}
+                                            onClick={() => patchFormData({ limitPurchases: !formData.limitPurchases })}
                                             className={`w-10 h-6 rounded-full transition-all relative cursor-pointer ${formData.limitPurchases ? 'bg-black' : 'bg-gray-200'}`}
                                         >
                                             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${formData.limitPurchases ? 'left-5' : 'left-1'}`} />
@@ -947,7 +925,7 @@ export default function DigitalProductFlow({
                                     ].map(theme => (
                                         <div
                                             key={theme.id}
-                                            onClick={() => setFormData({ ...formData, themeId: theme.id })}
+                                            onClick={() => patchFormData({ themeId: theme.id })}
                                             className="group cursor-pointer space-y-2.5 transition-all active:scale-95"
                                         >
                                             <div className={`aspect-[4/3] rounded-2xl overflow-hidden border-[3px] transition-all duration-300 ${formData.themeId === theme.id ? 'border-black shadow-xl scale-105' : 'border-gray-50 group-hover:border-gray-200'}`}>
@@ -982,7 +960,7 @@ export default function DigitalProductFlow({
                                                 ].map(id => (
                                                     <div
                                                         key={id}
-                                                        onClick={() => setFormData({ ...formData, customBgImage: `https://images.unsplash.com/photo-${id}?w=1200&auto=format&fit=crop` })}
+                                                        onClick={() => patchFormData({ customBgImage: `https://images.unsplash.com/photo-${id}?w=1200&auto=format&fit=crop` })}
                                                         className={`aspect-square rounded-full overflow-hidden border-2 cursor-pointer hover:scale-110 transition-transform ${formData.customBgImage?.includes(id) ? 'border-blue-500 ring-2 ring-blue-500/20' : 'border-gray-100'}`}
                                                     >
                                                         <img src={`https://images.unsplash.com/photo-${id}?w=100&h=100&fit=crop`} className="w-full h-full object-cover" />
@@ -999,12 +977,12 @@ export default function DigitalProductFlow({
                                                             type="color"
                                                             className="w-10 h-10 rounded-full border-none cursor-pointer"
                                                             value={formData.buttonColor || "#000000"}
-                                                            onChange={e => setFormData({ ...formData, buttonColor: e.target.value })}
+                                                            onChange={e => patchFormData({ buttonColor: e.target.value })}
                                                         />
                                                         <input
                                                             className="flex-1 px-4 py-3 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black"
                                                             value={formData.buttonColor}
-                                                            onChange={e => setFormData({ ...formData, buttonColor: e.target.value })}
+                                                            onChange={e => patchFormData({ buttonColor: e.target.value })}
                                                         />
                                                     </div>
                                                 </div>
@@ -1015,12 +993,12 @@ export default function DigitalProductFlow({
                                                             type="color"
                                                             className="w-10 h-10 rounded-full border-none cursor-pointer"
                                                             value={formData.buttonTextColor || "#FFFFFF"}
-                                                            onChange={e => setFormData({ ...formData, buttonTextColor: e.target.value })}
+                                                            onChange={e => patchFormData({ buttonTextColor: e.target.value })}
                                                         />
                                                         <input
                                                             className="flex-1 px-4 py-3 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black"
                                                             value={formData.buttonTextColor}
-                                                            onChange={e => setFormData({ ...formData, buttonTextColor: e.target.value })}
+                                                            onChange={e => patchFormData({ buttonTextColor: e.target.value })}
                                                         />
                                                     </div>
                                                 </div>
@@ -1061,7 +1039,7 @@ export default function DigitalProductFlow({
                                                 <span className="text-[14px] font-black text-gray-900">Email Verification</span>
                                             </div>
                                             <div
-                                                onClick={() => setFormData({ ...formData, emailVerification: !formData.emailVerification })}
+                                                onClick={() => patchFormData({ emailVerification: !formData.emailVerification })}
                                                 className={`w-12 h-7 rounded-full transition-all relative cursor-pointer ${formData.emailVerification ? 'bg-black' : 'bg-gray-200'}`}
                                             >
                                                 <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${formData.emailVerification ? 'left-6' : 'left-1'}`} />
@@ -1079,7 +1057,7 @@ export default function DigitalProductFlow({
                                                 </div>
                                             </div>
                                             <div
-                                                onClick={() => setFormData({ ...formData, phoneVerification: !formData.phoneVerification })}
+                                                onClick={() => patchFormData({ phoneVerification: !formData.phoneVerification })}
                                                 className={`w-12 h-7 rounded-full transition-all relative cursor-pointer ${formData.phoneVerification ? 'bg-black' : 'bg-gray-200'}`}
                                             >
                                                 <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${formData.phoneVerification ? 'left-6' : 'left-1'}`} />
@@ -1099,7 +1077,7 @@ export default function DigitalProductFlow({
                                             className="w-full pl-5 pr-4 py-4 bg-gray-50/50 border border-gray-100 rounded-[16px] text-[14px] font-bold outline-none focus:border-black focus:bg-white transition-all shadow-sm placeholder:text-gray-300"
                                             placeholder="0%"
                                             value={formData.gstOnPrice || ""}
-                                            onChange={e => setFormData({ ...formData, gstOnPrice: e.target.value })}
+                                            onChange={e => patchFormData({ gstOnPrice: e.target.value })}
                                         />
                                     </div>
                                 </div>
@@ -1123,7 +1101,7 @@ export default function DigitalProductFlow({
                                                 className="w-full px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[20px] text-[13px] font-medium outline-none focus:border-black focus:bg-white transition-all shadow-sm resize-none h-[120px]"
                                                 placeholder={`Enter your ${policy.label.toLowerCase()}...`}
                                                 value={(formData as any)[policy.field] || ""}
-                                                onChange={e => setFormData({ ...formData, [policy.field]: e.target.value })}
+                                                onChange={e => patchFormData({ [policy.field]: e.target.value })}
                                             />
                                         </div>
                                     ))}
@@ -1148,7 +1126,7 @@ export default function DigitalProductFlow({
                                         value={formData.customPageUrl || ""}
                                         onChange={e => {
                                             const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-');
-                                            setFormData({ ...formData, customPageUrl: val });
+                                            patchFormData({ customPageUrl: val });
                                         }}
                                         placeholder="my-cool-page"
                                     />
@@ -1173,7 +1151,7 @@ export default function DigitalProductFlow({
                                                     {item.sub && <p className="text-[11px] font-bold text-gray-400 leading-relaxed max-w-[320px]">{item.sub}</p>}
                                                 </div>
                                                 <div
-                                                    onClick={() => setFormData({ ...formData, [item.id]: !((formData as any)[item.id]) })}
+                                                    onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
                                                     className={`w-12 h-7 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
                                                 >
                                                     <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-6' : 'left-1'}`} />
@@ -1186,7 +1164,7 @@ export default function DigitalProductFlow({
                                                         type="date"
                                                         className="w-full px-5 py-3 bg-white border border-gray-100 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                         value={formData.pageExpiryDate || ""}
-                                                        onChange={e => setFormData({ ...formData, pageExpiryDate: e.target.value })}
+                                                        onChange={e => patchFormData({ pageExpiryDate: e.target.value })}
                                                     />
                                                 </div>
                                             )}
@@ -1206,7 +1184,7 @@ export default function DigitalProductFlow({
                                                 className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                                 placeholder="Enter Pixel ID"
                                                 value={formData.metaPixelId || ""}
-                                                onChange={e => setFormData({ ...formData, metaPixelId: e.target.value })}
+                                                onChange={e => patchFormData({ metaPixelId: e.target.value })}
                                             />
                                         </div>
 
@@ -1219,7 +1197,7 @@ export default function DigitalProductFlow({
                                                 className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                                 placeholder="G-XXXXXXXXXX"
                                                 value={formData.googleAnalyticsId || ""}
-                                                onChange={e => setFormData({ ...formData, googleAnalyticsId: e.target.value })}
+                                                onChange={e => patchFormData({ googleAnalyticsId: e.target.value })}
                                             />
                                         </div>
                                     </div>
@@ -1326,4 +1304,5 @@ export default function DigitalProductFlow({
         </div>
     );
 }
+
 

@@ -9,12 +9,14 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { FormData, Product } from "@/lib/types";
-import { uploadToS3 } from "@/lib/upload";
-import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
+import { getErrorMessage, logError } from "@/lib/error-utils";
+import { persistListPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
+import { uploadWithOptimistic } from "@/lib/builder/upload";
 
 interface ListProductFlowProps {
    formData: FormData;
-   setFormData: (data: any) => void;
+   patchFormData: (patch: Partial<FormData>) => void;
+   updateFormData: (updater: (prev: FormData) => FormData) => void;
    step: number;
    subStep: number;
    onNext: () => void;
@@ -23,11 +25,10 @@ interface ListProductFlowProps {
    isLive: boolean;
    setIsLive: (val: boolean) => void;
    setSubStep: (val: number) => void;
-   setStep: (val: number) => void;
 }
 
 export default function ListProductFlow({
-   formData, setFormData, step, subStep, onNext, onBack, onCancel, isLive, setIsLive, setSubStep
+   formData, patchFormData, updateFormData, step, subStep, onNext, onBack, onCancel, isLive, setIsLive, setSubStep
 }: ListProductFlowProps) {
    // subStep is handled by parent now
 
@@ -55,39 +56,10 @@ export default function ListProductFlow({
          await new Promise(resolve => setTimeout(resolve, 800));
       }
 
-      // SAVE DATA FOR PERSISTENCE
-      const slug = formData.customPageUrl || formData.title?.toLowerCase().replace(/[^a-z0-9]/g, '-') || "my-collection";
-      localStorage.setItem(`website_${slug}`, JSON.stringify(formData));
+      const { websiteEntry } = persistListPublish(formData);
 
-      // Update Dashboard List
-      const existingList = JSON.parse(localStorage.getItem('websites_list') || '[]');
-      const websiteEntry = {
-         title: formData.title || "Untitled Collection",
-         price: `₹${formData.price || "0"}`,
-         sale: "0",
-         revenue: "₹0",
-         status: "Active", // Correct status for Published filter
-         image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=2371",
-         lastModified: "Just now",
-         slug: slug,
-         type: "list"
-      };
-
-      const updatedList = [websiteEntry, ...existingList.filter((site: any) => site.slug !== slug)];
-      localStorage.setItem('websites_list', JSON.stringify(updatedList));
-
-      // SYNC TO S3 FOR SEARCH OPTIMIZATION
       try {
-         const response = await fetch('/api/websites', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ formData, websiteEntry })
-         });
-
-         if (!response.ok) {
-            const errorPayload = await response.json().catch(() => null);
-            throw new Error(extractApiErrorMessage(errorPayload, "Failed to sync website index."));
-         }
+         await syncPublishedWebsiteIndex(formData, websiteEntry);
       } catch (err) {
          logError("list flow publish sync", err);
       }
@@ -186,25 +158,28 @@ export default function ListProductFlow({
    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: string, isArray: boolean = false) => {
       const file = e.target.files?.[0];
       if (file) {
-         // Optimistic Update: Show local image immediately
-         const localUrl = URL.createObjectURL(file);
-         if (isArray) {
-            const currentArr = (formData as any)[field] || [];
-            setFormData({ ...formData, [field]: [...currentArr, localUrl] });
-         } else {
-            setFormData({ ...formData, [field]: localUrl });
-         }
-
          setIsUploading(true);
          try {
-            const s3Url = await uploadToS3(file, field);
-            // Replace local URL with S3 URL
-            setFormData((prev: FormData) => {
-               if (isArray) {
-                  const currentArr = (prev as any)[field] || [];
-                  return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? s3Url : url) };
-               } else {
-                  return { ...prev, [field]: s3Url };
+            await uploadWithOptimistic({
+               file,
+               uploadKey: field,
+               applyLocal: (localUrl) => {
+                  if (isArray) {
+                     const currentArr = (formData as any)[field] || [];
+                     patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
+                  } else {
+                     patchFormData({ [field]: localUrl } as Partial<FormData>);
+                  }
+               },
+               applyRemote: (remoteUrl, localUrl) => {
+                  updateFormData((prev: FormData) => {
+                     if (isArray) {
+                        const currentArr = (prev as any)[field] || [];
+                        return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
+                     }
+
+                     return { ...prev, [field]: remoteUrl };
+                  });
                }
             });
          } catch (err) {
@@ -256,7 +231,7 @@ export default function ListProductFlow({
                         <input
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                            value={formData.title}
-                           onChange={e => setFormData({ ...formData, title: e.target.value })}
+                           onChange={e => patchFormData({ title: e.target.value })}
                            placeholder="Website Page Title"
                         />
                         <span className="absolute right-5 top-1/2 -translate-y-1/2 text-[12px] font-bold text-gray-300">28/60</span>
@@ -270,7 +245,7 @@ export default function ListProductFlow({
                         <select
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm appearance-none cursor-pointer"
                            value={formData.category}
-                           onChange={e => setFormData({ ...formData, category: e.target.value })}
+                           onChange={e => patchFormData({ category: e.target.value })}
                         >
                            <option value="" disabled>Select a category</option>
                            <option value="digital">Digital Product</option>
@@ -323,7 +298,7 @@ export default function ListProductFlow({
                            <button
                               onClick={() => {
                                  if (tempImageUrl) {
-                                    setFormData({ ...formData, coverImage: tempImageUrl });
+                                    patchFormData({ coverImage: tempImageUrl });
                                     setTempImageUrl("");
                                  }
                               }}
@@ -354,7 +329,7 @@ export default function ListProductFlow({
                                     const before = text.substring(0, start);
                                     const selection = text.substring(start, end);
                                     const after = text.substring(end);
-                                    setFormData({ ...formData, description: `${before}**${selection}**${after}` });
+                                    patchFormData({ description: `${before}**${selection}**${after}` });
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
@@ -369,7 +344,7 @@ export default function ListProductFlow({
                                     const before = text.substring(0, start);
                                     const selection = text.substring(start, end);
                                     const after = text.substring(end);
-                                    setFormData({ ...formData, description: `${before}_${selection}_${after}` });
+                                    patchFormData({ description: `${before}_${selection}_${after}` });
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
@@ -384,7 +359,7 @@ export default function ListProductFlow({
                                     const before = text.substring(0, start);
                                     const selection = text.substring(start, end);
                                     const after = text.substring(end);
-                                    setFormData({ ...formData, description: `${before}<u>${selection}</u>${after}` });
+                                    patchFormData({ description: `${before}<u>${selection}</u>${after}` });
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
@@ -397,7 +372,7 @@ export default function ListProductFlow({
                            className="w-full h-48 px-6 py-5 text-[14px] font-bold outline-none border-none resize-none placeholder:text-gray-200 font-sans"
                            placeholder="Add description..."
                            value={formData.description}
-                           onChange={e => setFormData({ ...formData, description: e.target.value })}
+                           onChange={e => patchFormData({ description: e.target.value })}
                         />
                      </div>
                   </div>
@@ -432,14 +407,14 @@ export default function ListProductFlow({
                                              className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                              placeholder="Gallery Title (e.g. Visual Showcase)"
                                              value={formData.galleryTitle || ""}
-                                             onChange={e => setFormData({ ...formData, galleryTitle: e.target.value })}
+                                             onChange={e => patchFormData({ galleryTitle: e.target.value })}
                                           />
                                           <div className="grid grid-cols-4 gap-4">
                                              {formData.galleryImages?.map((img: string, i: number) => (
                                                 <div key={i} className="aspect-square rounded-2xl overflow-hidden border border-gray-200 relative group shadow-sm">
                                                    <img src={img} className="w-full h-full object-cover" />
                                                    <button
-                                                      onClick={() => setFormData({ ...formData, galleryImages: formData.galleryImages?.filter((_: any, idx: number) => idx !== i) })}
+                                                      onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_: any, idx: number) => idx !== i) })}
                                                       className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                                    >
                                                       <X size={12} />
@@ -469,13 +444,13 @@ export default function ListProductFlow({
                                              className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                              placeholder="Customer Name"
                                              value={formData.testimonialName || ""}
-                                             onChange={e => setFormData({ ...formData, testimonialName: e.target.value })}
+                                             onChange={e => patchFormData({ testimonialName: e.target.value })}
                                           />
                                           <textarea
                                              className="w-full h-32 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
                                              placeholder="Their testimonial message..."
                                              value={formData.testimonialComment || ""}
-                                             onChange={e => setFormData({ ...formData, testimonialComment: e.target.value })}
+                                             onChange={e => patchFormData({ testimonialComment: e.target.value })}
                                           />
                                        </div>
                                     )}
@@ -488,7 +463,7 @@ export default function ListProductFlow({
                                                    onClick={() => {
                                                       const newFaqs = [...(formData.faqs || [])];
                                                       newFaqs.splice(idx, 1);
-                                                      setFormData({ ...formData, faqs: newFaqs });
+                                                      patchFormData({ faqs: newFaqs });
                                                    }}
                                                    className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                                                 >
@@ -501,7 +476,7 @@ export default function ListProductFlow({
                                                    onChange={e => {
                                                       const newFaqs = [...(formData.faqs || [])];
                                                       newFaqs[idx].question = e.target.value;
-                                                      setFormData({ ...formData, faqs: newFaqs });
+                                                      patchFormData({ faqs: newFaqs });
                                                    }}
                                                 />
                                                 <textarea
@@ -511,13 +486,13 @@ export default function ListProductFlow({
                                                    onChange={e => {
                                                       const newFaqs = [...(formData.faqs || [])];
                                                       newFaqs[idx].answer = e.target.value;
-                                                      setFormData({ ...formData, faqs: newFaqs });
+                                                      patchFormData({ faqs: newFaqs });
                                                    }}
                                                 />
                                              </div>
                                           ))}
                                           <button
-                                             onClick={() => setFormData({ ...formData, faqs: [...(formData.faqs || []), { question: "", answer: "" }] })}
+                                             onClick={() => patchFormData({ faqs: [...(formData.faqs || []), { question: "", answer: "" }] })}
                                              className="w-full py-4 border-2 border-dashed border-gray-200 rounded-[24px] text-[13px] font-black text-gray-400 hover:border-black hover:text-black transition-all flex items-center justify-center gap-2 bg-white"
                                           >
                                              <Plus size={16} /> Add FAQ
@@ -530,7 +505,7 @@ export default function ListProductFlow({
                                           className="w-full h-48 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
                                           placeholder="Share your story, mission, and background..."
                                           value={formData.aboutUs || ""}
-                                          onChange={e => setFormData({ ...formData, aboutUs: e.target.value })}
+                                          onChange={e => patchFormData({ aboutUs: e.target.value })}
                                        />
                                     )}
 
@@ -540,7 +515,7 @@ export default function ListProductFlow({
                                              className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                              placeholder="Footer Copyright Text"
                                              value={formData.footerText || ""}
-                                             onChange={e => setFormData({ ...formData, footerText: e.target.value })}
+                                             onChange={e => patchFormData({ footerText: e.target.value })}
                                           />
                                           <div className="grid grid-cols-2 gap-4">
                                              <div className="relative">
@@ -549,7 +524,7 @@ export default function ListProductFlow({
                                                    className="w-full pl-12 pr-4 py-4 bg-white border border-gray-200 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                    placeholder="Instagram handle"
                                                    value={formData.socialInstagram || ""}
-                                                   onChange={e => setFormData({ ...formData, socialInstagram: e.target.value })}
+                                                   onChange={e => patchFormData({ socialInstagram: e.target.value })}
                                                 />
                                              </div>
                                              <div className="relative">
@@ -558,7 +533,7 @@ export default function ListProductFlow({
                                                    className="w-full pl-12 pr-4 py-4 bg-white border border-gray-200 rounded-xl text-[13px] font-bold outline-none focus:border-black shadow-sm"
                                                    placeholder="Twitter handle"
                                                    value={formData.socialTwitter || ""}
-                                                   onChange={e => setFormData({ ...formData, socialTwitter: e.target.value })}
+                                                   onChange={e => patchFormData({ socialTwitter: e.target.value })}
                                                 />
                                              </div>
                                           </div>
@@ -603,7 +578,7 @@ export default function ListProductFlow({
                                  <select
                                     className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm appearance-none cursor-pointer"
                                     value={formData.paymentPageFor || "digital"}
-                                    onChange={e => setFormData({ ...formData, paymentPageFor: e.target.value })}
+                                    onChange={e => patchFormData({ paymentPageFor: e.target.value })}
                                  >
                                     <option value="link">Website Link</option>
                                     <option value="digital">Single or multiple digital files</option>
@@ -619,7 +594,7 @@ export default function ListProductFlow({
                                     className="w-full ml-9 w-[calc(100%-36px)] px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                     placeholder="Add Website Link"
                                     value={formData.websiteLink}
-                                    onChange={e => setFormData({ ...formData, websiteLink: e.target.value })}
+                                    onChange={e => patchFormData({ websiteLink: e.target.value })}
                                  />
                               </div>
                            ) : (
@@ -666,7 +641,7 @@ export default function ListProductFlow({
                                  className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                  placeholder="Enter Product Name"
                                  value={formData.productTitle}
-                                 onChange={e => setFormData({ ...formData, productTitle: e.target.value })}
+                                 onChange={e => patchFormData({ productTitle: e.target.value })}
                               />
                            </div>
                            <div className="space-y-3">
@@ -675,7 +650,7 @@ export default function ListProductFlow({
                                  className="ml-9 w-[calc(100%-36px)] h-32 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
                                  placeholder="Descriptions"
                                  value={formData.productDescription}
-                                 onChange={e => setFormData({ ...formData, productDescription: e.target.value })}
+                                 onChange={e => patchFormData({ productDescription: e.target.value })}
                               />
                            </div>
                         </div>
@@ -706,7 +681,7 @@ export default function ListProductFlow({
                                           className="hidden"
                                           name="pricing"
                                           checked={formData.pricingType === opt.id}
-                                          onChange={() => setFormData({ ...formData, pricingType: opt.id })}
+                                          onChange={() => patchFormData({ pricingType: opt.id })}
                                        />
                                        <span className={`text-[14px] font-bold ${formData.pricingType === opt.id ? "text-black" : "text-gray-500"}`}>{opt.label}</span>
                                     </label>
@@ -720,7 +695,7 @@ export default function ListProductFlow({
                                        className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                        placeholder="Enter Price"
                                        value={formData.price}
-                                       onChange={e => setFormData({ ...formData, price: e.target.value })}
+                                       onChange={e => patchFormData({ price: e.target.value })}
                                     />
                                  </div>
 
@@ -730,7 +705,7 @@ export default function ListProductFlow({
                                           type="checkbox"
                                           className="hidden"
                                           checked={formData.pppEnabled}
-                                          onChange={() => setFormData({ ...formData, pppEnabled: !formData.pppEnabled })}
+                                          onChange={() => patchFormData({ pppEnabled: !formData.pppEnabled })}
                                        />
                                        {formData.pppEnabled && <Check size={14} className="text-black" strokeWidth={4} />}
                                     </div>
@@ -744,7 +719,7 @@ export default function ListProductFlow({
                                           className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                           placeholder="Enter Discount Price"
                                           value={formData.discountPrice}
-                                          onChange={e => setFormData({ ...formData, discountPrice: e.target.value })}
+                                          onChange={e => patchFormData({ discountPrice: e.target.value })}
                                        />
                                     </div>
                                  )}
@@ -770,7 +745,7 @@ export default function ListProductFlow({
                                           onClick={() => {
                                              const newProducts = [...(formData.products || [])];
                                              newProducts.splice(idx, 1);
-                                             setFormData({ ...formData, products: newProducts });
+                                             patchFormData({ products: newProducts });
                                           }}
                                           className="p-2.5 bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-red-500 hover:shadow-md transition-all"
                                        >
@@ -806,7 +781,7 @@ export default function ListProductFlow({
 
                                  <div className="absolute left-10 -bottom-12 flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-50 z-10">
                                     <div className="w-4 h-4 border-2 border-gray-200 rounded flex items-center justify-center">
-                                       <input type="checkbox" className="hidden" checked={formData.compulsoryBuy} onChange={() => setFormData({ ...formData, compulsoryBuy: !formData.compulsoryBuy })} />
+                                       <input type="checkbox" className="hidden" checked={formData.compulsoryBuy} onChange={() => patchFormData({ compulsoryBuy: !formData.compulsoryBuy })} />
                                        {formData.compulsoryBuy && <Check size={10} strokeWidth={4} />}
                                     </div>
                                     <span className="text-[11px] font-bold text-gray-500">Make this compulsory to buy</span>
@@ -826,9 +801,7 @@ export default function ListProductFlow({
                                        description: formData.productDescription || "",
                                        image: formData.digitalFilesImage
                                     };
-                                    setFormData({
-                                       ...formData,
-                                       products: [...(formData.products || []), newProduct],
+                                    patchFormData({ products: [...(formData.products || []), newProduct],
                                        // Only reset product-specific fields, keep page title!
                                        productTitle: "",
                                        price: "",
@@ -859,14 +832,14 @@ export default function ListProductFlow({
                            className="flex-1 bg-transparent outline-none text-[14px] font-bold text-gray-900 placeholder:text-gray-300"
                            placeholder="Select Colour"
                            value={formData.brandColor}
-                           onChange={e => setFormData({ ...formData, brandColor: e.target.value })}
+                           onChange={e => patchFormData({ brandColor: e.target.value })}
                         />
                         <div className="flex items-center gap-2">
                            <input
                               type="color"
                               className="w-12 h-6 border-none cursor-pointer bg-transparent"
                               value={formData.brandColor}
-                              onChange={e => setFormData({ ...formData, brandColor: e.target.value })}
+                              onChange={e => patchFormData({ brandColor: e.target.value })}
                            />
                            <div
                               className="w-12 h-6 rounded-md shadow-inner border border-gray-100"
@@ -889,7 +862,7 @@ export default function ListProductFlow({
                               {item.sub && <p className="text-[13px] font-bold text-gray-400 leading-relaxed max-w-md">{item.sub}</p>}
                            </div>
                            <div
-                              onClick={() => setFormData({ ...formData, [item.id]: !((formData as any)[item.id]) })}
+                              onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
                               className={`w-14 h-8 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
                            >
                               <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-7' : 'left-1'}`} />
@@ -909,7 +882,7 @@ export default function ListProductFlow({
                               className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all shadow-sm"
                               placeholder="Enter Pixel ID"
                               value={formData.metaPixelId || ""}
-                              onChange={e => setFormData({ ...formData, metaPixelId: e.target.value })}
+                              onChange={e => patchFormData({ metaPixelId: e.target.value })}
                            />
                         </div>
 
@@ -922,7 +895,7 @@ export default function ListProductFlow({
                               className="w-full px-5 py-4 bg-white border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all shadow-sm"
                               placeholder="G-XXXXXXXXXX"
                               value={formData.googleAnalyticsId || ""}
-                              onChange={e => setFormData({ ...formData, googleAnalyticsId: e.target.value })}
+                              onChange={e => patchFormData({ googleAnalyticsId: e.target.value })}
                            />
                         </div>
                      </div>
@@ -943,7 +916,7 @@ export default function ListProductFlow({
                                  </div>
                               </div>
                               <div
-                                 onClick={() => setFormData({ ...formData, customRedirectToggle: !formData.customRedirectToggle })}
+                                 onClick={() => patchFormData({ customRedirectToggle: !formData.customRedirectToggle })}
                                  className={`w-14 h-8 rounded-full transition-all relative cursor-pointer ${formData.customRedirectToggle ? 'bg-black' : 'bg-gray-100'}`}
                               >
                                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${formData.customRedirectToggle ? 'left-7' : 'left-1'}`} />
@@ -954,7 +927,7 @@ export default function ListProductFlow({
                                  className="w-full px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all"
                                  placeholder="https://your-website.com/thank-you"
                                  value={formData.customRedirectUrl || ""}
-                                 onChange={e => setFormData({ ...formData, customRedirectUrl: e.target.value })}
+                                 onChange={e => patchFormData({ customRedirectUrl: e.target.value })}
                               />
                            )}
                         </div>
@@ -974,13 +947,13 @@ export default function ListProductFlow({
                                  className="w-full px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all"
                                  placeholder="Success Title (e.g. Welcome to the Tribe!)"
                                  value={formData.successMessageTitle || ""}
-                                 onChange={e => setFormData({ ...formData, successMessageTitle: e.target.value })}
+                                 onChange={e => patchFormData({ successMessageTitle: e.target.value })}
                               />
                               <textarea
                                  className="w-full h-24 px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[16px] text-[13px] font-bold outline-none focus:border-black transition-all resize-none"
                                  placeholder="Success Message (e.g. Your credentials have been sent...)"
                                  value={formData.successMessage || ""}
-                                 onChange={e => setFormData({ ...formData, successMessage: e.target.value })}
+                                 onChange={e => patchFormData({ successMessage: e.target.value })}
                               />
                            </div>
                         </div>
@@ -1001,7 +974,7 @@ export default function ListProductFlow({
                               </div>
                            </div>
                            <div
-                              onClick={() => setFormData({ ...formData, emailVerification: !formData.emailVerification })}
+                              onClick={() => patchFormData({ emailVerification: !formData.emailVerification })}
                               className={`w-14 h-8 rounded-full transition-all relative cursor-pointer ${formData.emailVerification ? 'bg-black' : 'bg-gray-100'}`}
                            >
                               <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${formData.emailVerification ? 'left-7' : 'left-1'}`} />
@@ -1019,7 +992,7 @@ export default function ListProductFlow({
                               </div>
                            </div>
                            <div
-                              onClick={() => setFormData({ ...formData, phoneVerification: !formData.phoneVerification })}
+                              onClick={() => patchFormData({ phoneVerification: !formData.phoneVerification })}
                               className={`w-14 h-8 rounded-full transition-all relative cursor-pointer ${formData.phoneVerification ? 'bg-black' : 'bg-gray-200'}`}
                            >
                               <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${formData.phoneVerification ? 'left-7' : 'left-1'}`} />
@@ -1042,14 +1015,12 @@ export default function ListProductFlow({
             <button
                disabled={isUploading}
                onClick={() => {
-                  if (step === 1) onNext();
-                  else if (step === 2) {
-                     // In list flow, step 2 has substeps
-                     if (subStep < 3) setSubStep(subStep + 1);
-                     else onNext();
-                  } else if (step === 3) {
+                  if (step === 3) {
                      handlePublish();
+                     return;
                   }
+
+                  onNext();
                }}
                className={`px-12 py-5 rounded-full text-[16px] font-black shadow-xl transition-all active:scale-95 flex items-center gap-2 ${isUploading ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-900'}`}
             >
@@ -1065,3 +1036,4 @@ export default function ListProductFlow({
       </div>
    );
 }
+
