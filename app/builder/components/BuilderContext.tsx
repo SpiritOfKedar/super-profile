@@ -1,10 +1,24 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext } from "react";
 import { FlowType, FormData } from "@/lib/types";
-import { logError } from "@/lib/error-utils";
+import {
+    builderActions,
+    BuilderAction,
+    BuilderState,
+    builderReducer,
+    canGoBack,
+    initialBuilderState
+} from "@/lib/builder/state";
+import {
+    clearBuilderDraft,
+    loadBuilderHydrationPayload,
+    saveBuilderDraft
+} from "@/lib/builder/storage";
 
 interface BuilderContextType {
+    state: BuilderState;
+    dispatch: React.Dispatch<BuilderAction>;
     flowType: FlowType;
     setFlowType: (type: FlowType) => void;
     step: number;
@@ -13,109 +27,155 @@ interface BuilderContextType {
     setSubStep: React.Dispatch<React.SetStateAction<number>>;
     formData: FormData;
     setFormData: React.Dispatch<React.SetStateAction<FormData>>;
+    setFormField: <K extends keyof FormData>(field: K, value: FormData[K]) => void;
+    patchFormData: (patch: Partial<FormData>) => void;
+    updateFormData: (updater: (prev: FormData) => FormData) => void;
     isLive: boolean;
     setIsLive: (isLive: boolean) => void;
+    nextStep: () => void;
+    prevStep: () => void;
+    canGoBack: boolean;
+    isHydrated: boolean;
     resetBuilder: () => void;
 }
-
-const initialFormData: FormData = {
-    title: "",
-    category: "",
-    cta: "Get It Now",
-    description: "",
-    pricingType: "fixed",
-    price: "",
-    discountPrice: "",
-    pppEnabled: true,
-    limitPurchases: true,
-    themeId: "default",
-    buttonColor: "#000000",
-    buttonTextColor: "#FFFFFF",
-    paymentPageFor: "Website Link",
-    websiteLink: "",
-    compulsoryBuy: false,
-    customPageUrl: "",
-    pageExpiry: false,
-    darkTheme: false,
-    deactivateSales: false,
-    trackingToggle: false,
-    brandColor: "#000000"
-};
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 
 export function BuilderProvider({ children }: { children: React.ReactNode }) {
-    const [flowType, setFlowType] = useState<FlowType>("digital");
-    const [step, setStep] = useState(1);
-    const [subStep, setSubStep] = useState(1);
-    const [isLive, setIsLive] = useState(false);
-    const [formData, setFormData] = useState<FormData>(initialFormData);
+    const [state, dispatch] = React.useReducer(builderReducer, initialBuilderState);
+    const [isHydrated, setIsHydrated] = React.useState(false);
 
-    // Load Data from URL or Draft
+    const flowType = state.flowType;
+    const step = state.step;
+    const subStep = state.subStep;
+    const formData = state.formData;
+    const isLive = state.isLive;
+
     React.useEffect(() => {
-        const urlParams = new URLSearchParams(window.location.search);
-        const editSlug = urlParams.get('edit');
-
-        // Detect flow type from URL path
-        const pathParts = window.location.pathname.split('/');
-        const urlType = pathParts[pathParts.indexOf('builder') + 1] as FlowType;
-
-        if (editSlug) {
-            const savedWebsite = localStorage.getItem(`website_${editSlug}`);
-            if (savedWebsite) {
-                try {
-                    const parsed = JSON.parse(savedWebsite);
-                    setFormData(parsed);
-                    setStep(1);
-                    setSubStep(1);
-                    if (urlType) setFlowType(urlType);
-                    return;
-                } catch (e) {
-                    logError("builder context parse website data", e);
-                }
-            }
+        if (typeof window === "undefined") {
+            return;
         }
 
-        const savedDraft = localStorage.getItem('builder_draft');
-        if (savedDraft) {
-            try {
-                const parsed = JSON.parse(savedDraft);
-                // Only load draft if it matches the current flow type or if we're not in a specific type
-                if (!urlType || parsed.flowType === urlType) {
-                    setFormData(parsed.formData || initialFormData);
-                    setStep(parsed.step || 1);
-                    setSubStep(parsed.subStep || 1);
-                    setFlowType(parsed.flowType || "digital");
-                }
-            } catch (e) {
-                logError("builder context parse draft", e);
-            }
-        }
+        const payload = loadBuilderHydrationPayload({
+            pathname: window.location.pathname,
+            search: window.location.search
+        });
+
+        dispatch(builderActions.hydrate(payload));
+        setIsHydrated(true);
     }, []);
 
     React.useEffect(() => {
-        if (!isLive) {
-            localStorage.setItem('builder_draft', JSON.stringify({ formData, step, subStep, flowType }));
+        if (!isHydrated) {
+            return;
         }
-    }, [formData, step, subStep, flowType, isLive]);
+
+        if (!isLive) {
+            saveBuilderDraft(state);
+        }
+
+    }, [isHydrated, isLive, state]);
+
+    const setFlowType = React.useCallback((type: FlowType) => {
+        dispatch(builderActions.setFlowType(type));
+    }, []);
+
+    const setStep = React.useCallback((value: React.SetStateAction<number>) => {
+        if (typeof value === "function") {
+            dispatch(builderActions.setStep(value(step)));
+            return;
+        }
+        dispatch(builderActions.setStep(value));
+    }, [step]);
+
+    const setSubStep = React.useCallback((value: React.SetStateAction<number>) => {
+        if (typeof value === "function") {
+            dispatch(builderActions.setSubStep(value(subStep)));
+            return;
+        }
+        dispatch(builderActions.setSubStep(value));
+    }, [subStep]);
+
+    const setFormData = React.useCallback((value: React.SetStateAction<FormData>) => {
+        if (typeof value === "function") {
+            dispatch(builderActions.updateForm(value));
+            return;
+        }
+        dispatch(builderActions.replaceForm(value));
+    }, []);
+
+    const setFormField = React.useCallback(<K extends keyof FormData>(field: K, value: FormData[K]) => {
+        dispatch(builderActions.setFormField(field, value));
+    }, []);
+
+    const patchFormData = React.useCallback((patch: Partial<FormData>) => {
+        dispatch(builderActions.patchForm(patch));
+    }, []);
+
+    const updateFormData = React.useCallback((updater: (prev: FormData) => FormData) => {
+        dispatch(builderActions.updateForm(updater));
+    }, []);
+
+    const setIsLive = React.useCallback((value: boolean) => {
+        dispatch(builderActions.setIsLive(value));
+    }, []);
+
+    const nextStep = React.useCallback(() => {
+        dispatch(builderActions.nextStep());
+    }, []);
+
+    const prevStep = React.useCallback(() => {
+        dispatch(builderActions.prevStep());
+    }, []);
 
     const resetBuilder = () => {
-        setStep(1);
-        setSubStep(1);
-        setIsLive(false);
-        setFormData(initialFormData);
-        localStorage.removeItem('builder_draft');
+        dispatch(builderActions.reset());
+        clearBuilderDraft();
     };
 
+    const value = React.useMemo(() => ({
+        state,
+        dispatch,
+        flowType,
+        setFlowType,
+        step,
+        setStep,
+        subStep,
+        setSubStep,
+        formData,
+        setFormData,
+        setFormField,
+        patchFormData,
+        updateFormData,
+        isLive,
+        setIsLive,
+        nextStep,
+        prevStep,
+        canGoBack: canGoBack(state),
+        isHydrated,
+        resetBuilder
+    }), [
+        state,
+        flowType,
+        setFlowType,
+        step,
+        setStep,
+        subStep,
+        setSubStep,
+        formData,
+        setFormData,
+        setFormField,
+        patchFormData,
+        updateFormData,
+        isLive,
+        setIsLive,
+        nextStep,
+        prevStep,
+        isHydrated
+    ]);
+
     return (
-        <BuilderContext.Provider value={{
-            flowType, setFlowType,
-            step, setStep,
-            subStep, setSubStep,
-            formData, setFormData,
-            isLive, setIsLive,
-            resetBuilder
-        }}>
+        <BuilderContext.Provider value={value}>
             {children}
         </BuilderContext.Provider>
     );
