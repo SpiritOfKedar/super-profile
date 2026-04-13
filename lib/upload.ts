@@ -1,3 +1,5 @@
+import { extractApiErrorMessage } from "@/lib/error-utils";
+
 export async function uploadToS3(file: File, path: string = "general"): Promise<string> {
     const formData = new FormData();
     formData.append("file", file);
@@ -9,8 +11,8 @@ export async function uploadToS3(file: File, path: string = "general"): Promise<
     });
 
     if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Upload failed");
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(extractApiErrorMessage(errorPayload, "Upload failed"));
     }
 
     const data = await response.json();

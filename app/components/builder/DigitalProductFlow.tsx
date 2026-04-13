@@ -9,6 +9,7 @@ import React, { useState, useEffect } from "react";
 import { FormData } from "@/lib/types";
 import DevicePreview from "./DevicePreview";
 import { uploadToS3 } from "@/lib/upload";
+import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
 
 interface DigitalProductFlowProps {
     formData: FormData;
@@ -74,13 +75,18 @@ export default function DigitalProductFlow({
 
         // SYNC TO S3 FOR SEARCH OPTIMIZATION
         try {
-            await fetch('/api/websites', {
+            const response = await fetch('/api/websites', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ formData, websiteEntry })
             });
+
+            if (!response.ok) {
+                const errorPayload = await response.json().catch(() => null);
+                throw new Error(extractApiErrorMessage(errorPayload, "Failed to sync website index."));
+            }
         } catch (err) {
-            console.error("Failed to sync to S3 index:", err);
+            logError("digital flow publish sync", err);
         }
 
         setIsPublishing(false);
@@ -112,8 +118,8 @@ export default function DigitalProductFlow({
                     }
                 });
             } catch (err) {
-                console.error("Upload error:", err);
-                alert("Failed to upload image. Please check your S3 configuration.");
+                logError("digital flow file upload", err);
+                alert(getErrorMessage(err, "Failed to upload image. Please check your S3 configuration."));
                 // Revert to placeholder or remove broken local link if desired
             } finally {
                 setIsUploading(false);
@@ -169,8 +175,8 @@ export default function DigitalProductFlow({
                 const s3Url = await uploadToS3(file, 'products');
                 updateProduct(id, 'image', s3Url);
             } catch (err) {
-                console.error("Upload error:", err);
-                alert("Failed to upload image.");
+                logError("digital flow product image upload", err);
+                alert(getErrorMessage(err, "Failed to upload image."));
             } finally {
                 setIsUploading(false);
             }

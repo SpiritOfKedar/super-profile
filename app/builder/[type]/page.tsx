@@ -6,6 +6,7 @@ import DigitalProductFlow from "@/app/components/builder/DigitalProductFlow";
 import ListProductFlow from "@/app/components/builder/ListProductFlow";
 import { FlowType } from "@/lib/types";
 import { useEffect } from "react";
+import { logError } from "@/lib/error-utils";
 
 export default function BuilderFlowPage() {
     const params = useParams();
@@ -30,7 +31,7 @@ export default function BuilderFlowPage() {
                     const parsed = JSON.parse(savedData);
                     setFormData(parsed);
                 } catch (e) {
-                    console.error("Failed to parse edit data", e);
+                    logError("builder/[type] parse edit data", e);
                 }
             } else {
                 // Check if it's demo data by index

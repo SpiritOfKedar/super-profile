@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState } from "react";
 import { FlowType, FormData } from "@/lib/types";
+import { logError } from "@/lib/error-utils";
 
 interface BuilderContextType {
     flowType: FlowType;
@@ -70,7 +71,7 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
                     if (urlType) setFlowType(urlType);
                     return;
                 } catch (e) {
-                    console.error("Failed to parse website data", e);
+                    logError("builder context parse website data", e);
                 }
             }
         }
@@ -87,7 +88,7 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
                     setFlowType(parsed.flowType || "digital");
                 }
             } catch (e) {
-                console.error("Failed to parse draft", e);
+                logError("builder context parse draft", e);
             }
         }
     }, []);
