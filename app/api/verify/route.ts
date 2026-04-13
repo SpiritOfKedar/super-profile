@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
+import { badRequest, externalServiceError, internalServerError } from "@/lib/api-error";
 
 // In-memory store for OTPs (In a real app, use Redis or a Database)
 const otpStore = new Map<string, string>();
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
         const { type, target } = await req.json();
 
         if (!target) {
-            return NextResponse.json({ error: "Target is required" }, { status: 400 });
+            return badRequest("Target is required");
         }
 
         // Generate a 4-digit OTP
@@ -50,10 +51,7 @@ export async function POST(req: NextRequest) {
                 console.error("Email sending error:", mailError);
                 // Still log for debug if SMTP is not configured
                 console.log(`[DEBUG] Email OTP was: ${otp}`);
-                return NextResponse.json({
-                    success: false,
-                    error: "Failed to send email. Please check SMTP configuration."
-                }, { status: 500 });
+                return externalServiceError("Failed to send email. Please check SMTP configuration.");
             }
         } else {
             // For phone, we still log to console until SMS provider is added
@@ -64,8 +62,8 @@ export async function POST(req: NextRequest) {
             success: true,
             message: `OTP sent successfully to ${target}.`
         });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        return internalServerError(error, "api/verify POST", "Failed to send OTP");
     }
 }
 
@@ -80,8 +78,8 @@ export async function PUT(req: NextRequest) {
             return NextResponse.json({ success: true, verified: true });
         }
 
-        return NextResponse.json({ success: false, error: "Invalid OTP" }, { status: 400 });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        return badRequest("Invalid OTP");
+    } catch (error: unknown) {
+        return internalServerError(error, "api/verify PUT", "Failed to verify OTP");
     }
 }

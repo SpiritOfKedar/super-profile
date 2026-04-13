@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "@/lib/s3";
+import { badRequest, internalServerError, notFound } from "@/lib/api-error";
 
 // Helper to read JSON from S3
 async function readJsonFromS3(key: string) {
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
         const slug = websiteEntry.slug;
 
         if (!slug) {
-            return NextResponse.json({ error: "Slug is required" }, { status: 400 });
+            return badRequest("Slug is required");
         }
 
         // 1. Save individual website config
@@ -52,9 +53,8 @@ export async function POST(req: NextRequest) {
         console.log(`DEBUG: Website ${slug} published and indexed.`);
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        console.error("Publish error:", error);
-        return NextResponse.json({ error: error.message || "Failed to publish" }, { status: 500 });
+    } catch (error: unknown) {
+        return internalServerError(error, "api/websites POST", "Failed to publish");
     }
 }
 
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
         if (slug) {
             const config = await readJsonFromS3(`data/configs/${slug}.json`);
             if (!config) {
-                return NextResponse.json({ error: "Website not found" }, { status: 404 });
+                return notFound("Website not found");
             }
             return NextResponse.json(config);
         }
@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
         }
 
         return NextResponse.json(index);
-    } catch (error: any) {
-        return NextResponse.json({ error: "Failed to fetch index" }, { status: 500 });
+    } catch (error: unknown) {
+        return internalServerError(error, "api/websites GET", "Failed to fetch index");
     }
 }

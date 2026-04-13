@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import Script from "next/script";
 import { FormData, Product } from "@/lib/types";
+import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
 import {
     Check, X, Plus, HelpCircle, Mail, Phone, Users, Instagram, Twitter, Globe,
     ArrowRight, Star, ShoppingBag, ShieldCheck, Lock, ChevronDown, RefreshCw,
@@ -44,13 +45,17 @@ export default function PublicProductPage() {
                     return;
                 }
             } catch (err) {
-                console.warn("Cloud fetch failed, falling back to local storage", err);
+                logError("public page cloud fetch fallback", err);
             }
 
             // 2. Fallback to Local Storage (for draft previews or offline mode)
             const localData = localStorage.getItem(`website_${slug}`);
             if (localData) {
-                setFormData(JSON.parse(localData));
+                try {
+                    setFormData(JSON.parse(localData));
+                } catch (err) {
+                    logError("public page parse local config", err);
+                }
             }
             setLoading(false);
         };
@@ -191,14 +196,15 @@ export default function PublicProductPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'email', target: email })
             });
-            const data = await res.json();
-            if (data.success) {
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
                 setShowEmailOtp(true);
             } else {
-                alert(data.error || "Email verification failed");
+                alert(extractApiErrorMessage(data, "Email verification failed"));
             }
         } catch (err) {
-            alert("Verification service unavailable");
+            logError("public page verify email", err);
+            alert(getErrorMessage(err, "Verification service unavailable"));
         } finally {
             setVerifyingEmail(false);
         }
@@ -213,14 +219,15 @@ export default function PublicProductPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'phone', target: phone })
             });
-            const data = await res.json();
-            if (data.success) {
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.success) {
                 setShowPhoneOtp(true);
             } else {
-                alert(data.error || "Failed to send OTP");
+                alert(extractApiErrorMessage(data, "Failed to send OTP"));
             }
         } catch (err) {
-            alert("Phone verification service unavailable");
+            logError("public page verify phone", err);
+            alert(getErrorMessage(err, "Phone verification service unavailable"));
         } finally {
             setVerifyingPhone(false);
         }
@@ -234,15 +241,16 @@ export default function PublicProductPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target: email, otp: emailOtp })
             });
-            const data = await res.json();
-            if (data.verified) {
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.verified) {
                 setEmailVerified(true);
                 setShowEmailOtp(false);
             } else {
-                alert(data.error || "Invalid OTP entered");
+                alert(extractApiErrorMessage(data, "Invalid OTP entered"));
             }
         } catch (err) {
-            alert("OTP verification failed");
+            logError("public page confirm email otp", err);
+            alert(getErrorMessage(err, "OTP verification failed"));
         }
     };
 
@@ -254,15 +262,16 @@ export default function PublicProductPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ target: phone, otp: phoneOtp })
             });
-            const data = await res.json();
-            if (data.verified) {
+            const data = await res.json().catch(() => null);
+            if (res.ok && data?.verified) {
                 setPhoneVerified(true);
                 setShowPhoneOtp(false);
             } else {
-                alert(data.error || "Invalid OTP entered");
+                alert(extractApiErrorMessage(data, "Invalid OTP entered"));
             }
         } catch (err) {
-            alert("OTP verification failed");
+            logError("public page confirm phone otp", err);
+            alert(getErrorMessage(err, "OTP verification failed"));
         }
     };
 
@@ -292,11 +301,12 @@ export default function PublicProductPage() {
                     currency: "INR",
                 })
             });
-            const order = await res.json();
+            const order = await res.json().catch(() => null);
 
-            if (!order.id) {
-                console.error("Order creation failed:", order);
-                alert(`Order creation failed: ${order.error || "Unknown error"}`);
+            if (!res.ok || !order?.id) {
+                const orderError = extractApiErrorMessage(order, "Unknown error");
+                logError("public page order creation failed", order);
+                alert(`Order creation failed: ${orderError}`);
                 return;
             }
 
@@ -335,13 +345,14 @@ export default function PublicProductPage() {
 
             const rzp = new (window as any).Razorpay(options);
             rzp.on('payment.failed', function (response: any) {
-                alert("Payment Failed: " + response.error.description);
+                const failureMessage = extractApiErrorMessage(response?.error, "Payment failed");
+                alert("Payment Failed: " + failureMessage);
             });
             rzp.open();
 
-        } catch (err: any) {
-            console.error("Payment Error:", err);
-            alert("Payment gateway unreachable: " + (err.message || "Unknown error"));
+        } catch (err: unknown) {
+            logError("public page payment flow", err);
+            alert("Payment gateway unreachable: " + getErrorMessage(err, "Unknown error"));
         }
     };
 

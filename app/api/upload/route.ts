@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { s3Client, BUCKET_NAME } from "@/lib/s3";
+import { apiError, badRequest, internalServerError } from "@/lib/api-error";
 
 export async function POST(req: NextRequest) {
     try {
@@ -9,7 +10,7 @@ export async function POST(req: NextRequest) {
         const requestedPath = formData.get("path") as string || "general";
 
         if (!file) {
-            return NextResponse.json({ error: "No file provided" }, { status: 400 });
+            return badRequest("No file provided");
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
         console.log("DEBUG: File name:", fileName);
 
         if (!BUCKET_NAME) {
-            return NextResponse.json({ error: "S3 Bucket Name is not configured in .env" }, { status: 500 });
+            return apiError("S3 Bucket Name is not configured in .env", 500, "INTERNAL_ERROR");
         }
 
         const command = new PutObjectCommand({
@@ -40,8 +41,7 @@ export async function POST(req: NextRequest) {
         const url = `https://${BUCKET_NAME}.s3.${region}.amazonaws.com/${fileName}`;
 
         return NextResponse.json({ url });
-    } catch (error: any) {
-        console.error("Upload error:", error);
-        return NextResponse.json({ error: error.message || "Upload failed" }, { status: 500 });
+    } catch (error: unknown) {
+        return internalServerError(error, "api/upload POST", "Upload failed");
     }
 }

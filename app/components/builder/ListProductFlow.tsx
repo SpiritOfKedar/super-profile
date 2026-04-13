@@ -10,6 +10,7 @@ import {
 import { useState, useEffect } from "react";
 import { FormData, Product } from "@/lib/types";
 import { uploadToS3 } from "@/lib/upload";
+import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
 
 interface ListProductFlowProps {
    formData: FormData;
@@ -77,13 +78,18 @@ export default function ListProductFlow({
 
       // SYNC TO S3 FOR SEARCH OPTIMIZATION
       try {
-         await fetch('/api/websites', {
+         const response = await fetch('/api/websites', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ formData, websiteEntry })
          });
+
+         if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null);
+            throw new Error(extractApiErrorMessage(errorPayload, "Failed to sync website index."));
+         }
       } catch (err) {
-         console.error("Failed to sync to S3 index:", err);
+         logError("list flow publish sync", err);
       }
 
       setIsPublishing(false);
@@ -202,8 +208,8 @@ export default function ListProductFlow({
                }
             });
          } catch (err) {
-            console.error("Upload error:", err);
-            alert("Failed to upload image.");
+            logError("list flow image upload", err);
+            alert(getErrorMessage(err, "Failed to upload image."));
          } finally {
             setIsUploading(false);
          }
