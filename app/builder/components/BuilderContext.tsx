@@ -16,6 +16,8 @@ import {
     saveBuilderDraft
 } from "@/lib/builder/storage";
 
+const DRAFT_SAVE_DEBOUNCE_MS = 300;
+
 interface BuilderContextType {
     state: BuilderState;
     dispatch: React.Dispatch<BuilderAction>;
@@ -44,6 +46,7 @@ const BuilderContext = createContext<BuilderContextType | undefined>(undefined);
 export function BuilderProvider({ children }: { children: React.ReactNode }) {
     const [state, dispatch] = React.useReducer(builderReducer, initialBuilderState);
     const [isHydrated, setIsHydrated] = React.useState(false);
+    const latestStateRef = React.useRef(state);
 
     const flowType = state.flowType;
     const step = state.step;
@@ -66,15 +69,41 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     React.useEffect(() => {
+        latestStateRef.current = state;
+    }, [state]);
+
+    React.useEffect(() => {
         if (!isHydrated) {
             return;
         }
 
-        if (!isLive) {
-            saveBuilderDraft(state);
+        if (isLive) {
+            return;
         }
 
-    }, [isHydrated, isLive, state]);
+        // Persist navigation changes immediately.
+        saveBuilderDraft(state);
+
+    }, [isHydrated, isLive, state.flowType, state.step, state.subStep]);
+
+    React.useEffect(() => {
+        if (!isHydrated) {
+            return;
+        }
+
+        if (isLive) {
+            return;
+        }
+
+        // Debounce large form draft writes to reduce main-thread blocking on each keystroke.
+        const timeoutId = window.setTimeout(() => {
+            saveBuilderDraft(latestStateRef.current);
+        }, DRAFT_SAVE_DEBOUNCE_MS);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [isHydrated, isLive, state.formData]);
 
     const setFlowType = React.useCallback((type: FlowType) => {
         dispatch(builderActions.setFlowType(type));
@@ -82,19 +111,19 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
 
     const setStep = React.useCallback((value: React.SetStateAction<number>) => {
         if (typeof value === "function") {
-            dispatch(builderActions.setStep(value(step)));
+            dispatch(builderActions.updateStep(value));
             return;
         }
         dispatch(builderActions.setStep(value));
-    }, [step]);
+    }, []);
 
     const setSubStep = React.useCallback((value: React.SetStateAction<number>) => {
         if (typeof value === "function") {
-            dispatch(builderActions.setSubStep(value(subStep)));
+            dispatch(builderActions.updateSubStep(value));
             return;
         }
         dispatch(builderActions.setSubStep(value));
-    }, [subStep]);
+    }, []);
 
     const setFormData = React.useCallback((value: React.SetStateAction<FormData>) => {
         if (typeof value === "function") {
@@ -128,10 +157,10 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
         dispatch(builderActions.prevStep());
     }, []);
 
-    const resetBuilder = () => {
+    const resetBuilder = React.useCallback(() => {
         dispatch(builderActions.reset());
         clearBuilderDraft();
-    };
+    }, []);
 
     const value = React.useMemo(() => ({
         state,
