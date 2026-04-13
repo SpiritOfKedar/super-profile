@@ -5,7 +5,7 @@ import {
     Upload, Bold, Italic, Underline, AlignLeft, MoreHorizontal, HelpCircle, Info, Layout, Store,
     Instagram, Twitter, Settings, Shield, Mail, Phone, ExternalLink, Eye, RefreshCw, GripVertical, Plus, ArrowRight
 } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import React, { useDeferredValue, useState, useEffect } from "react";
 import { FormData } from "@/lib/types";
 import DevicePreview from "./DevicePreview";
 import { getErrorMessage, logError } from "@/lib/error-utils";
@@ -36,6 +36,7 @@ export default function DigitalProductFlow({
     const [tempCoverLink, setTempCoverLink] = useState("");
     const [tempTestimonialLink, setTempTestimonialLink] = useState("");
     const [isUploading, setIsUploading] = useState(false);
+    const previewFormData = useDeferredValue(formData);
 
     const [currentHost, setCurrentHost] = useState("");
 
@@ -181,6 +182,9 @@ export default function DigitalProductFlow({
                     <button onClick={() => setDevice("phone")} className={`p-2 rounded-lg transition-all ${device === "phone" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Smartphone size={16} /></button>
                 </div>
 
+                {(() => {
+                    const formData = previewFormData;
+                    return (
                 <DevicePreview device={device}>
                     <div
                         className={`flex-1 flex flex-col items-center text-center h-full py-16 px-8 overflow-y-auto scrollbar-hide relative transition-all duration-700 ${formData.themeId === 'tech' ? 'bg-[#0F172A] text-white' :
@@ -343,6 +347,8 @@ export default function DigitalProductFlow({
                         </div>
                     </div>
                 </DevicePreview>
+                    );
+                })()}
             </div>
 
             {/* Sidebar Form */}
