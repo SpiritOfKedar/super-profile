@@ -1,10 +1,94 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { Playfair_Display } from "next/font/google";
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { extractApiErrorMessage, getErrorMessage } from "@/lib/error-utils";
 
 const playfair = Playfair_Display({ subsets: ["latin"] });
 
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+    google_config: "Google sign-in is not configured yet. Add Google OAuth keys in .env.",
+    google_denied: "Google sign-in was cancelled.",
+    google_state: "Google sign-in session expired. Please try again.",
+    google_email: "Google account email is unavailable or not verified.",
+    google_callback: "Could not complete Google sign-in. Please try again.",
+    auth_config: "Server auth configuration is incomplete.",
+};
+
+function getSafeNextPath(path: string | null): string {
+    if (!path || !path.startsWith("/") || path.startsWith("//")) {
+        return "/";
+    }
+
+    return path;
+}
+
 export default function LoginPage() {
+    const router = useRouter();
+    const [redirectPath, setRedirectPath] = useState("/");
+
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [rememberMe, setRememberMe] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        setRedirectPath(getSafeNextPath(params.get("next")));
+
+        const errorCode = params.get("error");
+        if (errorCode && OAUTH_ERROR_MESSAGES[errorCode]) {
+            setErrorMessage(OAUTH_ERROR_MESSAGES[errorCode]);
+        }
+    }, []);
+
+    const handleGoogleContinue = () => {
+        const next = encodeURIComponent(redirectPath);
+        window.location.href = `/api/auth/google/start?next=${next}`;
+    };
+
+    const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (isSubmitting) {
+            return;
+        }
+
+        setErrorMessage(null);
+        setIsSubmitting(true);
+
+        try {
+            const response = await fetch("/api/auth/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    email,
+                    password,
+                    rememberMe,
+                }),
+            });
+
+            const data = await response.json().catch(() => null);
+
+            if (!response.ok || !data?.success) {
+                setErrorMessage(extractApiErrorMessage(data, "Unable to log in"));
+                return;
+            }
+
+            router.push(redirectPath);
+            router.refresh();
+        } catch (error: unknown) {
+            setErrorMessage(getErrorMessage(error, "Unable to log in"));
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     return (
         <div className="flex min-h-screen w-full">
             {/* Left Side - Image */}
@@ -34,7 +118,13 @@ export default function LoginPage() {
                         </p>
                     </div>
 
-                    <form className="mt-8 space-y-6">
+                    <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+                        {errorMessage && (
+                            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+                                {errorMessage}
+                            </p>
+                        )}
+
                         <div className="space-y-4">
                             <div>
                                 <label htmlFor="email" className="block text-sm font-medium text-gray-700">
@@ -44,6 +134,8 @@ export default function LoginPage() {
                                     id="email"
                                     name="email"
                                     type="email"
+                                    value={email}
+                                    onChange={(event) => setEmail(event.target.value)}
                                     required
                                     className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
                                     placeholder="Enter your email"
@@ -58,6 +150,8 @@ export default function LoginPage() {
                                     id="password"
                                     name="password"
                                     type="password"
+                                    value={password}
+                                    onChange={(event) => setPassword(event.target.value)}
                                     required
                                     className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
                                     placeholder="••••••••"
@@ -71,6 +165,8 @@ export default function LoginPage() {
                                     id="remember-me"
                                     name="remember-me"
                                     type="checkbox"
+                                    checked={rememberMe}
+                                    onChange={(event) => setRememberMe(event.target.checked)}
                                     className="h-4 w-4 text-black focus:ring-black border-gray-300 rounded"
                                 />
                                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
@@ -88,9 +184,10 @@ export default function LoginPage() {
                         <div>
                             <button
                                 type="submit"
+                                disabled={isSubmitting}
                                 className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
                             >
-                                Log In
+                                {isSubmitting ? "Logging In..." : "Log In"}
                             </button>
                         </div>
                     </form>
@@ -108,6 +205,7 @@ export default function LoginPage() {
                         <div className="mt-6 grid grid-cols-1 gap-3">
                             <button
                                 type="button"
+                                onClick={handleGoogleContinue}
                                 className="w-full flex items-center justify-center px-4 py-3 border border-gray-300 rounded-full shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
                             >
                                 {/* Google Icon SVG */}

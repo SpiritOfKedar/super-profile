@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
 import HistoryView from "./components/HistoryView";
 import CreateWebsiteModal from "./components/CreateWebsiteModal";
 import { FlowType } from "@/lib/types";
@@ -10,6 +11,7 @@ export default function App() {
     const router = useRouter();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [websites, setWebsites] = useState([]);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     useEffect(() => {
         const rawData = localStorage.getItem('websites_list');
@@ -79,8 +81,35 @@ export default function App() {
         router.push(`/builder/${id}`);
     };
 
+    const handleLogout = async () => {
+        if (isLoggingOut) return;
+
+        setIsLoggingOut(true);
+        try {
+            await fetch("/api/auth/logout", {
+                method: "POST",
+            });
+        } finally {
+            router.push("/login");
+            router.refresh();
+            setIsLoggingOut(false);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-white">
+            <div className="fixed right-4 top-4 z-50">
+                <button
+                    type="button"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                    className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-black/20 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    <LogOut size={14} />
+                    {isLoggingOut ? "Logging Out..." : "Logout"}
+                </button>
+            </div>
+
             <HistoryView
                 websites={websites as any}
                 onOpenCreateModal={() => setIsModalOpen(true)}
