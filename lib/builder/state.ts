@@ -115,7 +115,9 @@ export type BuilderAction =
     | { type: "hydrate"; payload: BuilderHydrationPayload }
     | { type: "setFlowType"; payload: FlowType }
     | { type: "setStep"; payload: number }
+    | { type: "updateStep"; updater: (prev: number) => number }
     | { type: "setSubStep"; payload: number }
+    | { type: "updateSubStep"; updater: (prev: number) => number }
     | { type: "setIsLive"; payload: boolean }
     | { type: "replaceForm"; payload: FormData }
     | { type: "patchForm"; payload: Partial<FormData> }
@@ -129,7 +131,9 @@ export const builderActions = {
     hydrate: (payload: BuilderHydrationPayload): BuilderAction => ({ type: "hydrate", payload }),
     setFlowType: (payload: FlowType): BuilderAction => ({ type: "setFlowType", payload }),
     setStep: (payload: number): BuilderAction => ({ type: "setStep", payload }),
+    updateStep: (updater: (prev: number) => number): BuilderAction => ({ type: "updateStep", updater }),
     setSubStep: (payload: number): BuilderAction => ({ type: "setSubStep", payload }),
+    updateSubStep: (updater: (prev: number) => number): BuilderAction => ({ type: "updateSubStep", updater }),
     setIsLive: (payload: boolean): BuilderAction => ({ type: "setIsLive", payload }),
     replaceForm: (payload: FormData): BuilderAction => ({ type: "replaceForm", payload }),
     patchForm: (payload: Partial<FormData>): BuilderAction => ({ type: "patchForm", payload }),
@@ -163,8 +167,12 @@ export function builderReducer(state: BuilderState, action: BuilderAction): Buil
             };
         case "setStep":
             return { ...state, step: action.payload };
+        case "updateStep":
+            return { ...state, step: action.updater(state.step) };
         case "setSubStep":
             return { ...state, subStep: action.payload };
+        case "updateSubStep":
+            return { ...state, subStep: action.updater(state.subStep) };
         case "setIsLive":
             return { ...state, isLive: action.payload };
         case "replaceForm":
