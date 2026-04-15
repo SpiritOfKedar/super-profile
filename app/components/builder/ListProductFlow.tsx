@@ -6,7 +6,7 @@ import {
    Users,
    Mail, Phone, Twitter, ExternalLink
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FormData } from "@/lib/types";
 import { readStringArrayField } from "@/lib/builder/form-dynamic";
 import { getErrorMessage, logError } from "@/lib/error-utils";
@@ -35,9 +35,12 @@ export default function ListProductFlow({
    const [isPublishing, setIsPublishing] = useState(false);
    const [publishingStep, setPublishingStep] = useState(0);
    const [isUploading, setIsUploading] = useState(false);
+   const [publishWarning, setPublishWarning] = useState<string | null>(null);
    const [currentHost, setCurrentHost] = useState("");
    const [tempImageUrl, setTempImageUrl] = useState("");
+   const [tempGalleryLink, setTempGalleryLink] = useState("");
    const [expandedSection, setExpandedSection] = useState<string | null>(null);
+   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
    useEffect(() => {
       if (typeof window !== "undefined") {
@@ -47,6 +50,7 @@ export default function ListProductFlow({
 
    const handlePublish = async () => {
       setIsPublishing(true);
+      setPublishWarning(null);
       const steps = ["Optimizing product list...", "Generating collection page...", "Securing checkout flows...", "Publishing to global CDN..."];
 
       for (let i = 0; i < steps.length; i++) {
@@ -56,13 +60,16 @@ export default function ListProductFlow({
 
       const { websiteEntry } = persistListPublish(formData);
 
-      try {
-         await syncPublishedWebsiteIndex(formData, websiteEntry);
-      } catch (err) {
-         logError("list flow publish sync", err);
-      }
+      const syncResult = await syncPublishedWebsiteIndex(formData, websiteEntry);
 
       setIsPublishing(false);
+      if (!syncResult.synced) {
+         const message = syncResult.errorMessage || "Failed to publish";
+         setPublishWarning(message);
+         alert(`Saved locally, but cloud publish failed: ${message}`);
+         return;
+      }
+
       setIsLive(true);
    };
 
@@ -189,6 +196,25 @@ export default function ListProductFlow({
       }
    };
 
+   const wrapDescriptionSelection = (prefix: string, suffix: string = prefix) => {
+      const textarea = descriptionRef.current;
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value || "";
+      const selected = text.slice(start, end);
+      const nextText = `${text.slice(0, start)}${prefix}${selected}${suffix}${text.slice(end)}`;
+      const cursorPos = selected.length > 0 ? end + prefix.length + suffix.length : start + prefix.length;
+
+      patchFormData({ description: nextText });
+
+      window.requestAnimationFrame(() => {
+         textarea.focus();
+         textarea.setSelectionRange(cursorPos, cursorPos);
+      });
+   };
+
    return (
       <div className="min-h-screen bg-[#FDFDFD] text-[#1A1A1A] font-sans">
          {/* Header */}
@@ -218,6 +244,11 @@ export default function ListProductFlow({
          </header>
 
          <main className="pt-32 pb-40 px-6 max-w-4xl mx-auto flex flex-col items-center">
+            {publishWarning && (
+               <div className="w-full mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+                  Cloud publish failed: {publishWarning}
+               </div>
+            )}
             {step === 1 ? (
                <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {/* Title Section */}
@@ -228,7 +259,7 @@ export default function ListProductFlow({
                      <div className="relative">
                         <input
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
-                           value={formData.title}
+                           value={formData.title ?? ""}
                            onChange={e => patchFormData({ title: e.target.value })}
                            placeholder="Website Page Title"
                         />
@@ -242,7 +273,7 @@ export default function ListProductFlow({
                      <div className="relative group">
                         <select
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm appearance-none cursor-pointer"
-                           value={formData.category}
+                           value={formData.category ?? ""}
                            onChange={e => patchFormData({ category: e.target.value })}
                         >
                            <option value="" disabled>Select a category</option>
@@ -319,45 +350,30 @@ export default function ListProductFlow({
                            </div>
                            <div className="flex items-center gap-1">
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}**${selection}**${after}` });
+                                    wrapDescriptionSelection("**");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
                                  <Bold size={16} className="text-gray-900" />
                               </button>
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}_${selection}_${after}` });
+                                    wrapDescriptionSelection("_");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
                                  <Italic size={16} className="text-gray-900" />
                               </button>
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}<u>${selection}</u>${after}` });
+                                    wrapDescriptionSelection("<u>", "</u>");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
@@ -367,9 +383,10 @@ export default function ListProductFlow({
                         </div>
                         <textarea
                            id="desc-area"
+                           ref={descriptionRef}
                            className="w-full h-48 px-6 py-5 text-[14px] font-bold outline-none border-none resize-none placeholder:text-gray-200 font-sans"
                            placeholder="Add description..."
-                           value={formData.description}
+                           value={formData.description ?? ""}
                            onChange={e => patchFormData({ description: e.target.value })}
                         />
                      </div>
@@ -407,6 +424,26 @@ export default function ListProductFlow({
                                              value={formData.galleryTitle || ""}
                                              onChange={e => patchFormData({ galleryTitle: e.target.value })}
                                           />
+                                          <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
+                                             <input
+                                                className="flex-1 bg-transparent px-4 py-2 text-[12px] font-bold outline-none"
+                                                placeholder="Paste image link"
+                                                value={tempGalleryLink}
+                                                onChange={(e) => setTempGalleryLink(e.target.value)}
+                                             />
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   if (!tempGalleryLink) return;
+                                                   const existing = formData.galleryImages || [];
+                                                   patchFormData({ galleryImages: [...existing, tempGalleryLink] });
+                                                   setTempGalleryLink("");
+                                                }}
+                                                className="px-5 py-2.5 bg-white border border-gray-100 rounded-xl text-[11px] font-black shadow-sm"
+                                             >
+                                                Add Link
+                                             </button>
+                                          </div>
                                           <div className="grid grid-cols-4 gap-4">
                                              {formData.galleryImages?.map((img: string, i: number) => (
                                                 <div key={i} className="aspect-square rounded-2xl overflow-hidden border border-gray-200 relative group shadow-sm">
@@ -591,7 +628,7 @@ export default function ListProductFlow({
                                  <input
                                     className="w-full ml-9 w-[calc(100%-36px)] px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                     placeholder="Add Website Link"
-                                    value={formData.websiteLink}
+                                    value={formData.websiteLink ?? ""}
                                     onChange={e => patchFormData({ websiteLink: e.target.value })}
                                  />
                               </div>
@@ -638,7 +675,7 @@ export default function ListProductFlow({
                               <input
                                  className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                  placeholder="Enter Product Name"
-                                 value={formData.productTitle}
+                                 value={formData.productTitle ?? ""}
                                  onChange={e => patchFormData({ productTitle: e.target.value })}
                               />
                            </div>
@@ -647,7 +684,7 @@ export default function ListProductFlow({
                               <textarea
                                  className="ml-9 w-[calc(100%-36px)] h-32 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
                                  placeholder="Descriptions"
-                                 value={formData.productDescription}
+                                 value={formData.productDescription ?? ""}
                                  onChange={e => patchFormData({ productDescription: e.target.value })}
                               />
                            </div>
@@ -692,7 +729,7 @@ export default function ListProductFlow({
                                     <input
                                        className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                        placeholder="Enter Price"
-                                       value={formData.price}
+                                       value={formData.price ?? ""}
                                        onChange={e => patchFormData({ price: e.target.value })}
                                     />
                                  </div>
@@ -716,7 +753,7 @@ export default function ListProductFlow({
                                        <input
                                           className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                           placeholder="Enter Discount Price"
-                                          value={formData.discountPrice}
+                                          value={formData.discountPrice ?? ""}
                                           onChange={e => patchFormData({ discountPrice: e.target.value })}
                                        />
                                     </div>
@@ -829,14 +866,14 @@ export default function ListProductFlow({
                         <input
                            className="flex-1 bg-transparent outline-none text-[14px] font-bold text-gray-900 placeholder:text-gray-300"
                            placeholder="Select Colour"
-                           value={formData.brandColor}
+                           value={formData.brandColor ?? ""}
                            onChange={e => patchFormData({ brandColor: e.target.value })}
                         />
                         <div className="flex items-center gap-2">
                            <input
                               type="color"
                               className="w-12 h-6 border-none cursor-pointer bg-transparent"
-                              value={formData.brandColor}
+                              value={formData.brandColor ?? "#000000"}
                               onChange={e => patchFormData({ brandColor: e.target.value })}
                            />
                            <div

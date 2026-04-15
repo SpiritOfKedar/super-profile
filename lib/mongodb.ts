@@ -29,10 +29,26 @@ function createMongoClient(): MongoClient {
             strict: true,
             deprecationErrors: true,
         },
+        // Fail faster in development when Atlas/network is unavailable.
+        serverSelectionTimeoutMS: 5000,
+        connectTimeoutMS: 5000,
     });
 }
 
 let mongoClientPromise: Promise<MongoClient> | null = null;
+
+function createConnectPromise(): Promise<MongoClient> {
+    return createMongoClient()
+        .connect()
+        .catch((error) => {
+            // Reset cached promise so future requests can retry a new connection.
+            mongoClientPromise = null;
+            if (process.env.NODE_ENV === "development") {
+                global.__mongoClientPromise = undefined;
+            }
+            throw error;
+        });
+}
 
 function getMongoClientPromise(): Promise<MongoClient> {
     if (mongoClientPromise) {
@@ -40,11 +56,11 @@ function getMongoClientPromise(): Promise<MongoClient> {
     }
 
     if (process.env.NODE_ENV === "development") {
-        mongoClientPromise = global.__mongoClientPromise ??= createMongoClient().connect();
+        mongoClientPromise = global.__mongoClientPromise ??= createConnectPromise();
         return mongoClientPromise;
     }
 
-    mongoClientPromise = createMongoClient().connect();
+    mongoClientPromise = createConnectPromise();
     return mongoClientPromise;
 }
 

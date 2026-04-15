@@ -34,6 +34,7 @@ export default function DigitalProductFlow({
     const [activeStyleTab, setActiveStyleTab] = useState<"Backgrounds" | "Buttons">("Backgrounds");
     const [isPublishing, setIsPublishing] = useState(false);
     const [, setPublishingStep] = useState(0);
+    const [publishWarning, setPublishWarning] = useState<string | null>(null);
     const [tempCoverLink, setTempCoverLink] = useState("");
     const [tempTestimonialLink, setTempTestimonialLink] = useState("");
     const [isUploading, setIsUploading] = useState(false);
@@ -49,6 +50,7 @@ export default function DigitalProductFlow({
 
     const handlePublish = async () => {
         setIsPublishing(true);
+        setPublishWarning(null);
         const steps = ["Optimizing images...", "Generating SEO tags...", "Configuring custom domain...", "Securing checkout flows...", "Pushing to global CDN..."];
 
         for (let i = 0; i < steps.length; i++) {
@@ -58,13 +60,16 @@ export default function DigitalProductFlow({
 
         const { websiteEntry } = persistDigitalPublish(formData);
 
-        try {
-            await syncPublishedWebsiteIndex(formData, websiteEntry);
-        } catch (err) {
-            logError("digital flow publish sync", err);
+        const syncResult = await syncPublishedWebsiteIndex(formData, websiteEntry);
+        setIsPublishing(false);
+
+        if (!syncResult.synced) {
+            const message = syncResult.errorMessage || "Failed to publish";
+            setPublishWarning(message);
+            alert(`Saved locally, but cloud publish failed: ${message}`);
+            return;
         }
 
-        setIsPublishing(false);
         setIsLive(true);
     };
 
@@ -171,7 +176,7 @@ export default function DigitalProductFlow({
                     {isUploading ? (
                         <>
                             <RefreshCw className="animate-spin text-blue-500" size={10} />
-                            <span className="text-[10px] font-black uppercase text-blue-500 tracking-wider">Uploading to S3...</span>
+                            <span className="text-[10px] font-black uppercase text-blue-500 tracking-wider">Uploading to Cloudinary...</span>
                         </>
                     ) : (
                         <span className="text-[10px] font-black uppercase text-gray-400">Preview Mode</span>
@@ -182,6 +187,11 @@ export default function DigitalProductFlow({
                     <button onClick={() => setDevice("laptop")} className={`p-2 rounded-lg transition-all ${device === "laptop" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Laptop size={16} /></button>
                     <button onClick={() => setDevice("phone")} className={`p-2 rounded-lg transition-all ${device === "phone" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Smartphone size={16} /></button>
                 </div>
+                {publishWarning && (
+                    <div className="absolute top-20 left-8 right-8 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 z-50">
+                        Cloud publish failed: {publishWarning}
+                    </div>
+                )}
 
                 {(() => {
                     const formData = previewFormData;

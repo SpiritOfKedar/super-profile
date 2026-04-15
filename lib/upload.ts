@@ -1,6 +1,6 @@
 import { extractApiErrorMessage } from "@/lib/error-utils";
 
-export async function uploadToS3(file: File, path: string = "general"): Promise<string> {
+export async function uploadAsset(file: File, path: string = "general"): Promise<string> {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("path", path);
@@ -18,3 +18,6 @@ export async function uploadToS3(file: File, path: string = "general"): Promise<
     const data = await response.json();
     return data.url;
 }
+
+// Backward-compatible alias for older call sites.
+export const uploadToS3 = uploadAsset;

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { apiError, badRequest, internalServerError } from "@/lib/api-error";
+import { apiError, badRequest, externalServiceError, internalServerError } from "@/lib/api-error";
 import { DEFAULT_SESSION_DURATION_SECONDS } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
 import { signSessionToken } from "@/lib/auth/jwt";
+import { isMongoUnavailable } from "@/lib/mongo-errors";
 import {
     createUserRecord,
     findUserByEmail,
@@ -81,6 +82,10 @@ export async function POST(req: NextRequest) {
 
         if (maybeError.message === "MONGODB_URI_MISSING") {
             return apiError("MONGODB_URI is missing. Set MONGODB_URI in your environment.", 500, "INTERNAL_ERROR");
+        }
+
+        if (isMongoUnavailable(error)) {
+            return externalServiceError("Database temporarily unavailable. Please try again.");
         }
 
         return internalServerError(error, "api/auth/signup POST", "Failed to create account");
