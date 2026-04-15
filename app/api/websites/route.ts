@@ -3,6 +3,7 @@ import { type Collection, type Filter, type OptionalUnlessRequiredId } from "mon
 import { badRequest, externalServiceError, internalServerError, notFound } from "@/lib/api-error";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { verifySessionToken } from "@/lib/auth/jwt";
+import { findUserById } from "@/lib/auth/user-store";
 import { getMongoDb } from "@/lib/mongodb";
 import { isMongoUnavailable } from "@/lib/mongo-errors";
 import { type FormData, type Website } from "@/lib/types";
@@ -11,10 +12,14 @@ interface WebsitesPayload {
     formData: FormData;
     websiteEntry: Website;
 }
+interface DeleteWebsitePayload {
+    slug?: string;
+}
 
 interface WebsiteDocument {
     slug: string;
     ownerId: string;
+    ownerUsername: string;
     formData: FormData;
     websiteEntry: Website;
     createdAt: string;
@@ -59,10 +64,20 @@ async function getWebsitesCollection(): Promise<Collection<WebsiteDocument>> {
 
     if (!websiteIndexesReady) {
         websiteIndexesReady = (async () => {
+            try {
+                await collection.dropIndex("unique_slug");
+            } catch {
+                // ignore when index does not exist
+            }
             await collection.createIndexes([
                 {
-                    key: { slug: 1 },
-                    name: "unique_slug",
+                    key: { ownerId: 1, slug: 1 },
+                    name: "unique_owner_slug",
+                    unique: true,
+                },
+                {
+                    key: { ownerUsername: 1, slug: 1 },
+                    name: "owner_username_slug",
                     unique: true,
                 },
                 {
@@ -100,30 +115,22 @@ export async function POST(req: NextRequest) {
 
         const payload = (await req.json()) as WebsitesPayload;
         const slug = getSlug(payload?.websiteEntry?.slug);
+        const user = await findUserById(session.sub);
+        const ownerUsername = user?.username?.trim() || session.username?.trim();
 
-        if (!slug) {
-            return badRequest("Slug is required");
+        if (!slug || !ownerUsername) {
+            return badRequest("Slug and username are required");
         }
 
         const collection = await getWebsitesCollection();
         const now = new Date().toISOString();
-        const existing = await collection.findOne({ slug });
-
-        if (existing?.ownerId && existing.ownerId !== session.sub) {
-            return NextResponse.json(
-                {
-                    success: false,
-                    error: "This page URL is already in use by another account.",
-                    code: "BAD_REQUEST",
-                },
-                { status: 409 }
-            );
-        }
+        const existing = await collection.findOne({ ownerId: session.sub, slug });
 
         const normalizedEntry = normalizeWebsiteEntry(payload.websiteEntry, slug);
 
         const document: OptionalUnlessRequiredId<WebsiteDocument> = {
             slug,
+            ownerUsername,
             ownerId: existing?.ownerId || session.sub,
             formData: payload.formData,
             websiteEntry: normalizedEntry,
@@ -132,9 +139,10 @@ export async function POST(req: NextRequest) {
         };
 
         await collection.updateOne(
-            { slug },
+            { ownerId: session.sub, slug },
             {
                 $set: {
+                    ownerUsername: document.ownerUsername,
                     ownerId: document.ownerId,
                     formData: document.formData,
                     websiteEntry: document.websiteEntry,
@@ -148,9 +156,14 @@ export async function POST(req: NextRequest) {
             { upsert: true }
         );
 
-        console.log(`[websites] Published slug=${slug}`);
+        console.log(`[websites] Published user=${ownerUsername} slug=${slug}`);
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({
+            success: true,
+            ownerUsername,
+            slug,
+            publicPath: `/u/${ownerUsername}/p/${slug}`,
+        });
     } catch (error: unknown) {
         if (isMongoUnavailable(error)) {
             return externalServiceError("Database temporarily unavailable. Please try again.");
@@ -165,9 +178,12 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const query = searchParams.get("q")?.trim();
         const slug = getSlug(searchParams.get("slug"));
+        const username = searchParams.get("username")?.trim().toLowerCase() || "";
 
         if (slug) {
-            const website = await collection.findOne({ slug });
+            const website = username
+                ? await collection.findOne({ ownerUsername: username, slug })
+                : await collection.findOne({ slug });
             if (!website) {
                 return notFound("Website not found");
             }
@@ -201,5 +217,33 @@ export async function GET(req: NextRequest) {
             return externalServiceError("Database temporarily unavailable. Please try again.");
         }
         return internalServerError(error, "api/websites GET", "Failed to fetch index");
+    }
+}
+
+export async function DELETE(req: NextRequest) {
+    try {
+        const session = await getSession(req);
+        if (!session) {
+            return unauthorizedResponse();
+        }
+
+        const payload = (await req.json()) as DeleteWebsitePayload;
+        const slug = getSlug(payload?.slug);
+        if (!slug) {
+            return badRequest("Slug is required");
+        }
+
+        const collection = await getWebsitesCollection();
+        const result = await collection.deleteOne({ ownerId: session.sub, slug });
+        if (!result.deletedCount) {
+            return notFound("Website not found");
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (error: unknown) {
+        if (isMongoUnavailable(error)) {
+            return externalServiceError("Database temporarily unavailable. Please try again.");
+        }
+        return internalServerError(error, "api/websites DELETE", "Failed to delete website");
     }
 }

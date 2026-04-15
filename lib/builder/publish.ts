@@ -60,6 +60,8 @@ export function persistListPublish(formData: FormData): PersistPublishResult {
 export interface SyncIndexResult {
     synced: boolean;
     errorMessage?: string;
+    ownerUsername?: string;
+    publicPath?: string;
 }
 
 export async function syncPublishedWebsiteIndex(formData: FormData, websiteEntry: Website): Promise<SyncIndexResult> {
@@ -78,7 +80,12 @@ export async function syncPublishedWebsiteIndex(formData: FormData, websiteEntry
             };
         }
 
-        return { synced: true };
+        const payload = await response.json().catch(() => null);
+        return {
+            synced: true,
+            ownerUsername: payload?.ownerUsername,
+            publicPath: payload?.publicPath,
+        };
     } catch (error: unknown) {
         return {
             synced: false,

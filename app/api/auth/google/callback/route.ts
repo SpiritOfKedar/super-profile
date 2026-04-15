@@ -8,7 +8,7 @@ import {
 } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
 import { signSessionToken } from "@/lib/auth/jwt";
-import { createUserRecord, findUserByEmail, normalizeEmail } from "@/lib/auth/user-store";
+import { createUserRecord, findUserByEmail, findUserByUsername, normalizeEmail, normalizeUsername } from "@/lib/auth/user-store";
 
 interface GoogleTokenResponse {
     access_token?: string;
@@ -134,11 +134,19 @@ export async function GET(req: NextRequest) {
         if (!user) {
             const fallbackName = normalizedEmail.split("@")[0] || "User";
             const name = profile.name?.trim() || fallbackName;
+            const baseUsername = normalizeUsername(profile.name || normalizedEmail.split("@")[0] || "user");
+            let username = baseUsername || `user_${randomUUID().slice(0, 8)}`;
+            let counter = 1;
+            while (await findUserByUsername(username)) {
+                counter += 1;
+                username = `${baseUsername || "user"}_${counter}`;
+            }
             const passwordHash = await bcrypt.hash(randomUUID(), 12);
 
             try {
                 user = await createUserRecord({
                     name,
+                    username,
                     email: normalizedEmail,
                     passwordHash,
                 });
@@ -161,6 +169,7 @@ export async function GET(req: NextRequest) {
             userId: user.id,
             email: user.email,
             name: user.name,
+            username: user.username,
             expiresInSeconds: DEFAULT_SESSION_DURATION_SECONDS,
         });
 

@@ -10,6 +10,8 @@ export interface Website {
     lastModified?: string;
     type?: FlowType;
     slug?: string;
+    ownerUsername?: string;
+    publicPath?: string;
 }
 
 export interface Product {

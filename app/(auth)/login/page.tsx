@@ -118,7 +118,7 @@ export default function LoginPage() {
             </div>
 
             {/* Right Side - Form */}
-            <div className="flex flex-col justify-center w-full lg:w-1/2 px-8 md:px-16 lg:px-24 bg-white">
+            <div className="flex flex-col justify-start lg:justify-center w-full lg:w-1/2 px-8 md:px-16 lg:px-24 py-10 bg-white overflow-y-auto">
                 <div className="max-w-md w-full mx-auto space-y-8">
                     <div className="text-center lg:text-left">
                         <h1 className={`${playfair.className} text-4xl font-bold tracking-tight text-gray-900`}>

@@ -5,6 +5,8 @@ import { clearSessionCookie } from "@/lib/auth/cookies";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { verifySessionToken } from "@/lib/auth/jwt";
 import { deleteUserById, findUserById } from "@/lib/auth/user-store";
+import { deleteUserCloudinaryAssets } from "@/lib/cloudinary";
+import { getMongoDb } from "@/lib/mongodb";
 import { isMongoUnavailable } from "@/lib/mongo-errors";
 
 interface DeleteAccountBody {
@@ -39,6 +41,9 @@ export async function DELETE(req: NextRequest) {
             return badRequest("Password is incorrect");
         }
 
+        const db = await getMongoDb();
+        await db.collection("websites").deleteMany({ ownerId: user.id });
+        await deleteUserCloudinaryAssets(user.id);
         await deleteUserById(user.id);
 
         const response = NextResponse.json({ success: true });

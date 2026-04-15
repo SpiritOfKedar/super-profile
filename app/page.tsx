@@ -24,55 +24,42 @@ export default function App() {
     const [isChangingPassword, setIsChangingPassword] = useState(false);
     const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
-    useEffect(() => {
-        const rawData = localStorage.getItem('websites_list');
-        if (rawData !== null) {
-            setWebsites(JSON.parse(rawData));
-        } else {
-            // Default Demo Data
-            setWebsites([
-                {
-                    title: "Project Alpha - Final Version",
-                    price: "₹1,999",
-                    sale: "12",
-                    revenue: "₹23,988",
-                    status: "Active",
-                    image: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=2426",
-                    lastModified: "12 mins ago",
-                    type: "digital"
-                },
-                {
-                    title: "Store - New Collection 2024",
-                    price: "₹4,500",
-                    sale: "5",
-                    revenue: "₹22,500",
-                    status: "Active",
-                    image: "https://images.unsplash.com/photo-1544256718-3bcf237f3974?q=80&w=2371",
-                    lastModified: "1 hour ago",
-                    type: "list"
-                },
-                {
-                    title: "Mastering React Component Patterns",
-                    price: "₹899",
-                    sale: "89",
-                    revenue: "₹80,011",
-                    status: "Draft",
-                    image: "https://images.unsplash.com/photo-1512486130939-2c4f79935e4f?q=80&w=2422",
-                    lastModified: "1 day ago",
-                    type: "digital"
-                },
-                {
-                    title: "Fitness & Nutrition Plan V2",
-                    price: "₹4,999",
-                    sale: "0",
-                    revenue: "₹0",
-                    status: "Draft",
-                    image: "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?q=80&w=2370",
-                    lastModified: "3 days ago",
-                    type: "digital"
-                }
-            ] satisfies Website[]);
+    const clearLocalUserData = () => {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (!key) continue;
+            if (
+                key === "websites_list"
+                || key === "builder_draft"
+                || key === "sp_active_user"
+                || key.startsWith("website_")
+                || key.startsWith("websites_list_")
+                || key.startsWith("builder_draft_")
+            ) {
+                keysToRemove.push(key);
+            }
         }
+        keysToRemove.forEach((key) => localStorage.removeItem(key));
+    };
+
+    useEffect(() => {
+        fetch("/api/websites")
+            .then(async (res) => {
+                if (res.status === 401) {
+                    router.push("/login");
+                    return [];
+                }
+                return res.json();
+            })
+            .then((data) => {
+                if (Array.isArray(data)) {
+                    setWebsites(data as Website[]);
+                } else {
+                    setWebsites([]);
+                }
+            })
+            .catch(() => setWebsites([]));
     }, []);
 
     useEffect(() => {
@@ -82,20 +69,33 @@ export default function App() {
                 if (data?.authenticated && data?.user?.email) {
                     setUserEmail(data.user.email);
                 }
+                if (data?.authenticated && data?.user?.username) {
+                    localStorage.setItem("sp_active_user", data.user.username);
+                }
             })
             .catch(() => undefined);
     }, []);
 
-    const handleDelete = (index: number) => {
+    const handleDelete = async (index: number) => {
         if (index === -1) return;
         const target = websites[index];
-        if (target && target.slug) {
-            localStorage.removeItem(`website_${target.slug}`);
+        if (!target?.slug) return;
+        const response = await fetch("/api/websites", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ slug: target.slug }),
+        });
+        if (!response.ok) {
+            alert("Failed to delete website from server.");
+            return;
         }
         const newList = [...websites];
         newList.splice(index, 1);
         setWebsites(newList);
-        localStorage.setItem('websites_list', JSON.stringify(newList));
+        localStorage.removeItem(`website_${target.slug}`);
+        if (target.ownerUsername) {
+            localStorage.removeItem(`website_${target.ownerUsername}_${target.slug}`);
+        }
     };
 
     const handleSelectFlow = (id: FlowType) => {
@@ -111,6 +111,7 @@ export default function App() {
             await fetch("/api/auth/logout", {
                 method: "POST",
             });
+            localStorage.removeItem("sp_active_user");
         } finally {
             router.push("/login");
             router.refresh();
@@ -176,6 +177,7 @@ export default function App() {
                 return;
             }
 
+            clearLocalUserData();
             router.push("/signup");
             router.refresh();
         } finally {

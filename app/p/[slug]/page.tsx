@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Script from "next/script";
 import { FormData, Product, Website } from "@/lib/types";
@@ -50,7 +50,9 @@ declare global {
 
 export default function PublicProductPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const slug = params.slug as string;
+    const username = searchParams.get("u") || "";
     const [formData, setFormData] = useState<FormData | null>(null);
     const [loading, setLoading] = useState(true);
     const [showCheckout, setShowCheckout] = useState(false);
@@ -79,7 +81,8 @@ export default function PublicProductPage() {
             setLoading(true);
             try {
                 // 1. Try fetching from Cloud Index (S3) - This makes the site truly public
-                const response = await fetch(`/api/websites?slug=${slug}`);
+                const query = username ? `?slug=${slug}&username=${encodeURIComponent(username)}` : `?slug=${slug}`;
+                const response = await fetch(`/api/websites${query}`);
                 if (response.ok) {
                     const cloudData = await response.json();
                     setFormData(cloudData);
@@ -90,7 +93,8 @@ export default function PublicProductPage() {
             }
 
             // 2. Fallback to Local Storage (for draft previews or offline mode)
-            const localData = localStorage.getItem(`website_${slug}`);
+            const localKey = username ? `website_${username}_${slug}` : `website_${slug}`;
+            const localData = localStorage.getItem(localKey);
             if (localData) {
                 try {
                     setFormData(JSON.parse(localData));
@@ -102,7 +106,7 @@ export default function PublicProductPage() {
         };
 
         fetchConfig().finally(() => setLoading(false));
-    }, [slug]);
+    }, [slug, username]);
 
     // Expiry Check Hook
     const [isExpired, setIsExpired] = useState(false);

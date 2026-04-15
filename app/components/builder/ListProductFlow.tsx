@@ -37,8 +37,11 @@ export default function ListProductFlow({
    const [isUploading, setIsUploading] = useState(false);
    const [publishWarning, setPublishWarning] = useState<string | null>(null);
    const [currentHost, setCurrentHost] = useState("");
+   const [currentUsername, setCurrentUsername] = useState("");
+   const [publishedPath, setPublishedPath] = useState("");
    const [tempImageUrl, setTempImageUrl] = useState("");
    const [tempGalleryLink, setTempGalleryLink] = useState("");
+   const [tempTestimonialLink, setTempTestimonialLink] = useState("");
    const [expandedSection, setExpandedSection] = useState<string | null>(null);
    const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -47,6 +50,24 @@ export default function ListProductFlow({
          setCurrentHost(window.location.origin);
       }
    }, []);
+
+   useEffect(() => {
+      fetch("/api/auth/session")
+         .then((res) => res.json())
+         .then((data) => {
+            if (data?.authenticated && data?.user?.username) {
+               setCurrentUsername(data.user.username);
+            }
+         })
+         .catch(() => undefined);
+   }, []);
+
+   const normalizeImageUrl = (raw: string): string => {
+      const trimmed = raw.trim();
+      if (!trimmed) return "";
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `https://${trimmed}`;
+   };
 
    const handlePublish = async () => {
       setIsPublishing(true);
@@ -68,6 +89,23 @@ export default function ListProductFlow({
          setPublishWarning(message);
          alert(`Saved locally, but cloud publish failed: ${message}`);
          return;
+      }
+
+      const livePath = syncResult.publicPath || `/p/${websiteEntry.slug || "my-collection"}`;
+      setPublishedPath(livePath);
+      if (websiteEntry.slug) {
+         const rawList = localStorage.getItem("websites_list");
+         if (rawList) {
+            const list = JSON.parse(rawList) as Array<{ slug?: string; ownerUsername?: string; publicPath?: string }>;
+            const next = list.map((item) => item.slug === websiteEntry.slug ? { ...item, ownerUsername: syncResult.ownerUsername, publicPath: livePath } : item);
+            localStorage.setItem("websites_list", JSON.stringify(next));
+         }
+         if (syncResult.ownerUsername) {
+            const savedRaw = localStorage.getItem(`website_${websiteEntry.slug}`);
+            if (savedRaw) {
+               localStorage.setItem(`website_${syncResult.ownerUsername}_${websiteEntry.slug}`, savedRaw);
+            }
+         }
       }
 
       setIsLive(true);
@@ -105,6 +143,7 @@ export default function ListProductFlow({
 
    if (isLive) {
       const slug = formData.customPageUrl || formData.title?.toLowerCase().replace(/[^a-z0-9]/g, '-') || "my-collection";
+      const livePath = publishedPath || (currentUsername ? `/u/${currentUsername}/p/${slug}` : `/p/${slug}`);
       return (
          <div className="fixed inset-0 z-[100] bg-white animate-in fade-in duration-500 flex flex-col items-center justify-center p-12">
             <div className="max-w-xl w-full flex flex-col items-center text-center space-y-8 py-12">
@@ -119,15 +158,15 @@ export default function ListProductFlow({
                   <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest text-center">Public URL</p>
                   <div className="flex items-center p-1.5 bg-gray-50 rounded-[30px] border border-gray-100 shadow-inner group/url">
                      <a
-                        href={`/p/${slug}`}
+                        href={livePath}
                         target="_blank"
                         className="flex-1 px-6 py-4 font-bold text-blue-600 text-[14px] overflow-hidden text-ellipsis whitespace-nowrap hover:underline decoration-2 underline-offset-4"
                      >
-                        {currentHost.replace(/^https?:\/\//, '')}/p/{slug}
+                        {currentHost.replace(/^https?:\/\//, '')}{livePath}
                      </a>
                      <button
                         onClick={() => {
-                           navigator.clipboard.writeText(`${currentHost}/p/${slug}`);
+                           navigator.clipboard.writeText(`${currentHost}${livePath}`);
                         }}
                         className="px-6 py-4 bg-white rounded-[24px] font-black text-[12px] shadow-sm hover:bg-gray-50 transition-all active:scale-95 flex items-center gap-2 group border border-gray-100"
                      >
@@ -137,7 +176,7 @@ export default function ListProductFlow({
                </div>
                <div className="flex w-full gap-4 pt-6">
                   <button
-                     onClick={() => window.open(`/p/${slug}`, '_blank')}
+                     onClick={() => window.open(livePath, '_blank')}
                      className="flex-1 bg-black text-white py-5 rounded-[30px] font-black text-base shadow-xl hover:opacity-90 transition-all flex items-center justify-center gap-3"
                   >
                      <Globe size={20} /> Preview
@@ -474,6 +513,41 @@ export default function ListProductFlow({
                                                 Upload Customer Photo
                                                 <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'testimonialImage')} />
                                              </label>
+                                          </div>
+                                          <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
+                                             <input
+                                                className="flex-1 bg-transparent px-4 py-2 text-[12px] font-bold outline-none"
+                                                placeholder="Paste image link"
+                                                value={tempTestimonialLink}
+                                                onChange={(e) => setTempTestimonialLink(e.target.value)}
+                                                onPaste={(e) => {
+                                                   const pasted = e.clipboardData.getData("text");
+                                                   const normalized = normalizeImageUrl(pasted);
+                                                   if (!normalized) return;
+                                                   e.preventDefault();
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                                onKeyDown={(e) => {
+                                                   if (e.key !== "Enter") return;
+                                                   const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                   if (!normalized) return;
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                             />
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                   if (!normalized) return;
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                                className="px-5 py-2.5 bg-white border border-gray-100 rounded-xl text-[11px] font-black shadow-sm"
+                                             >
+                                                Add Link
+                                             </button>
                                           </div>
                                           <input
                                              className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"

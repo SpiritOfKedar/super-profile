@@ -31,6 +31,7 @@ export default function SignupPage() {
     const [redirectPath, setRedirectPath] = useState("/");
 
     const [name, setName] = useState("");
+    const [username, setUsername] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
@@ -79,6 +80,7 @@ export default function SignupPage() {
                 },
                 body: JSON.stringify({
                     name,
+                    username,
                     email,
                     password,
                     otp: needsOtp ? otp : undefined,
@@ -125,7 +127,7 @@ export default function SignupPage() {
             </div>
 
             {/* Right Side - Form */}
-            <div className="flex flex-col justify-center w-full lg:w-1/2 px-8 md:px-16 lg:px-24 bg-white">
+            <div className="flex flex-col justify-start lg:justify-center w-full lg:w-1/2 px-8 md:px-16 lg:px-24 py-10 bg-white overflow-y-auto">
                 <div className="max-w-md w-full mx-auto space-y-8">
                     <div className="text-center lg:text-left">
                         <h1 className={`${playfair.className} text-4xl font-bold tracking-tight text-gray-900`}>
@@ -162,6 +164,23 @@ export default function SignupPage() {
                                     required
                                     className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
                                     placeholder="John Doe"
+                                />
+                            </div>
+
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                                    Username
+                                </label>
+                                <input
+                                    id="username"
+                                    name="username"
+                                    type="text"
+                                    value={username}
+                                    onChange={(event) => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+                                    required
+                                    minLength={3}
+                                    className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                                    placeholder="your_username"
                                 />
                             </div>
 

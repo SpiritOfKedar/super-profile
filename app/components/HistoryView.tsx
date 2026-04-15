@@ -55,6 +55,8 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
         });
     }, [websites, searchQuery, activeTab, sortBy]);
 
+    const hasActiveFilters = searchQuery.trim().length > 0 || activeTab !== "All";
+
     const stats = useMemo(() => {
         const totalRev = websites.reduce((acc, site) => acc + parseInt(site.revenue?.replace(/[^\d]/g, '') || '0'), 0);
         return {
@@ -162,8 +164,27 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
 
                     {filteredWebsites.length === 0 ? (
                         <div className="bg-white border border-dashed border-gray-200 rounded-3xl p-20 text-center space-y-3">
-                            <p className="text-gray-400 font-bold">No websites found matching your search.</p>
-                            <button onClick={() => { setSearchQuery(""); setActiveTab("All"); }} className="text-sm font-black text-black underline underline-offset-4">Clear all filters</button>
+                            {hasActiveFilters ? (
+                                <>
+                                    <p className="text-gray-400 font-bold">No websites found matching your search.</p>
+                                    <button
+                                        onClick={() => { setSearchQuery(""); setActiveTab("All"); }}
+                                        className="text-sm font-black text-black underline underline-offset-4"
+                                    >
+                                        Clear all filters
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-gray-400 font-bold">You have not published any websites yet.</p>
+                                    <button
+                                        onClick={onOpenCreateModal}
+                                        className="text-sm font-black text-black underline underline-offset-4"
+                                    >
+                                        Create your first website
+                                    </button>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-3"}>
@@ -233,7 +254,8 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                window.open(`/p/${site.slug}`, '_blank')
+                                                                const livePath = site.publicPath || (site.ownerUsername ? `/u/${site.ownerUsername}/p/${site.slug}` : `/p/${site.slug}`);
+                                                                window.open(livePath, '_blank');
                                                             }}
                                                             className="w-full px-4 py-2.5 text-left text-[13px] font-black text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                                                         >

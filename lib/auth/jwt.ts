@@ -6,6 +6,7 @@ export interface SessionPayload extends JWTPayload {
     sub: string;
     email: string;
     name: string;
+    username: string;
 }
 
 function getJwtSecret(): Uint8Array | null {
@@ -26,6 +27,7 @@ export async function signSessionToken(input: {
     userId: string;
     email: string;
     name: string;
+    username: string;
     expiresInSeconds: number;
 }): Promise<string | null> {
     const secret = getJwtSecret();
@@ -36,6 +38,7 @@ export async function signSessionToken(input: {
     return new SignJWT({
         email: input.email,
         name: input.name,
+        username: input.username,
     })
         .setProtectedHeader({ alg: "HS256" })
         .setSubject(input.userId)
@@ -52,17 +55,22 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
 
     try {
         const { payload } = await jwtVerify(token, secret);
-        const { sub, email, name } = payload;
+        const { sub, email, name, username } = payload;
 
         if (typeof sub !== "string" || typeof email !== "string" || typeof name !== "string") {
             return null;
         }
+
+        const safeUsername = typeof username === "string" && username.trim()
+            ? username
+            : email.split("@")[0];
 
         return {
             ...payload,
             sub,
             email,
             name,
+            username: safeUsername,
         } as SessionPayload;
     } catch {
         return null;

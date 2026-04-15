@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
             userId: user.id,
             email: user.email,
             name: user.name,
+            username: user.username,
             expiresInSeconds: maxAge,
         });
 

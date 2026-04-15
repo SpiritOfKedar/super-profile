@@ -4,6 +4,7 @@ import { BuilderHydrationPayload, BuilderState, initialFormData } from "@/lib/bu
 
 const BUILDER_DRAFT_KEY = "builder_draft";
 const WEBSITE_LIST_KEY = "websites_list";
+const ACTIVE_USER_KEY = "sp_active_user";
 
 interface BuilderDraftPayload {
     formData: FormData;
@@ -41,6 +42,14 @@ function parseJSON<T>(raw: string | null): T | null {
     }
 }
 
+function getScopedKey(baseKey: string): string {
+    if (typeof window === "undefined") {
+        return baseKey;
+    }
+    const activeUser = localStorage.getItem(ACTIVE_USER_KEY);
+    return activeUser ? `${baseKey}_${activeUser}` : baseKey;
+}
+
 function getWebsiteFromDemoIndex(indexText: string): Partial<FormData> | null {
     const index = parseInt(indexText, 10);
     if (Number.isNaN(index)) {
@@ -69,9 +78,12 @@ export function loadBuilderHydrationPayload(input: BuilderHydrationInput): Build
     const urlFlowType = getFlowTypeFromPathname(input.pathname);
     const urlParams = new URLSearchParams(input.search);
     const editSlug = urlParams.get("edit");
+    const activeUser = localStorage.getItem(ACTIVE_USER_KEY);
 
     if (editSlug) {
-        const savedWebsite = parseJSON<FormData>(localStorage.getItem(`website_${editSlug}`));
+        const scopedWebsiteKey = activeUser ? `website_${activeUser}_${editSlug}` : `website_${editSlug}`;
+        const savedWebsite = parseJSON<FormData>(localStorage.getItem(scopedWebsiteKey))
+            || parseJSON<FormData>(localStorage.getItem(`website_${editSlug}`));
 
         if (savedWebsite) {
             return {
@@ -93,7 +105,7 @@ export function loadBuilderHydrationPayload(input: BuilderHydrationInput): Build
         }
     }
 
-    const savedDraft = parseJSON<BuilderDraftPayload>(localStorage.getItem(BUILDER_DRAFT_KEY));
+    const savedDraft = parseJSON<BuilderDraftPayload>(localStorage.getItem(getScopedKey(BUILDER_DRAFT_KEY)));
     if (savedDraft) {
         if (!urlFlowType || savedDraft.flowType === urlFlowType) {
             return {
@@ -124,7 +136,7 @@ export function saveBuilderDraft(state: BuilderState) {
         flowType: state.flowType
     };
 
-    localStorage.setItem(BUILDER_DRAFT_KEY, JSON.stringify(draftPayload));
+    localStorage.setItem(getScopedKey(BUILDER_DRAFT_KEY), JSON.stringify(draftPayload));
 }
 
 export function clearBuilderDraft() {
@@ -132,6 +144,7 @@ export function clearBuilderDraft() {
         return;
     }
     localStorage.removeItem(BUILDER_DRAFT_KEY);
+    localStorage.removeItem(getScopedKey(BUILDER_DRAFT_KEY));
 }
 
 export function saveWebsiteBySlug(slug: string, formData: FormData) {
@@ -147,7 +160,9 @@ export function getWebsitesList(): Website[] {
         return [];
     }
 
-    return parseJSON<Website[]>(localStorage.getItem(WEBSITE_LIST_KEY)) || [];
+    return parseJSON<Website[]>(localStorage.getItem(getScopedKey(WEBSITE_LIST_KEY)))
+        || parseJSON<Website[]>(localStorage.getItem(WEBSITE_LIST_KEY))
+        || [];
 }
 
 export function saveWebsitesList(list: Website[]) {
@@ -155,5 +170,6 @@ export function saveWebsitesList(list: Website[]) {
         return;
     }
 
-    localStorage.setItem(WEBSITE_LIST_KEY, JSON.stringify(list));
+    const scopedKey = getScopedKey(WEBSITE_LIST_KEY);
+    localStorage.setItem(scopedKey, JSON.stringify(list));
 }
