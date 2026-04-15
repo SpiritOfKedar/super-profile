@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
 import { signSessionToken } from "@/lib/auth/jwt";
+import { generateOtp, sendEmailOtp, verifyEmailOtp } from "@/lib/auth/email-otp";
 import { isMongoUnavailable } from "@/lib/mongo-errors";
 import { findUserByEmail, normalizeEmail, toPublicUser } from "@/lib/auth/user-store";
 
@@ -14,6 +15,7 @@ interface LoginBody {
     email?: string;
     password?: string;
     rememberMe?: boolean;
+    otp?: string;
 }
 
 function unauthorized(): NextResponse {
@@ -33,6 +35,7 @@ export async function POST(req: NextRequest) {
         const email = body.email?.trim() || "";
         const password = body.password || "";
         const rememberMe = Boolean(body.rememberMe);
+        const otp = body.otp?.trim() || "";
 
         if (!email || !password) {
             return badRequest("Email and password are required");
@@ -46,6 +49,26 @@ export async function POST(req: NextRequest) {
         const isValidPassword = await bcrypt.compare(password, user.passwordHash);
         if (!isValidPassword) {
             return unauthorized();
+        }
+
+        if (!otp) {
+            try {
+                await sendEmailOtp(user.email, generateOtp());
+                return NextResponse.json(
+                    {
+                        success: false,
+                        requiresOtp: true,
+                        message: "A verification code has been sent to your email.",
+                    },
+                    { status: 202 }
+                );
+            } catch (mailError: unknown) {
+                return externalServiceError("Failed to send OTP email. Please check email configuration.");
+            }
+        }
+
+        if (!verifyEmailOtp(user.email, otp)) {
+            return badRequest("Invalid OTP");
         }
 
         const maxAge = rememberMe

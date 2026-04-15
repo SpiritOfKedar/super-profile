@@ -132,3 +132,24 @@ export async function createUserRecord(input: {
 
     return newUser;
 }
+
+export async function findUserById(id: string): Promise<StoredUser | undefined> {
+    const usersCollection = await getUsersCollection();
+    const user = await usersCollection.findOne({ id: id.trim() });
+    return toStoredUser(user);
+}
+
+export async function updateUserPasswordHash(userId: string, passwordHash: string): Promise<boolean> {
+    const usersCollection = await getUsersCollection();
+    const result = await usersCollection.updateOne(
+        { id: userId.trim() },
+        { $set: { passwordHash } }
+    );
+    return result.matchedCount > 0;
+}
+
+export async function deleteUserById(userId: string): Promise<boolean> {
+    const usersCollection = await getUsersCollection();
+    const result = await usersCollection.deleteOne({ id: userId.trim() });
+    return result.deletedCount > 0;
+}

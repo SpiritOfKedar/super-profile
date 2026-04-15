@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 
 interface RazorpayPaymentSuccess {
+    razorpay_order_id?: string;
     razorpay_payment_id?: string;
+    razorpay_signature?: string;
 }
 
 interface RazorpayFailurePayload {
@@ -27,7 +29,7 @@ interface RazorpayOptions {
     description: string;
     image: string;
     order_id: string;
-    handler: (response: RazorpayPaymentSuccess) => void;
+    handler: (response: RazorpayPaymentSuccess) => void | Promise<void>;
     prefill: { email: string; contact: string };
     theme: { color: string };
     modal: { ondismiss: () => void };
@@ -356,16 +358,39 @@ export default function PublicProductPage() {
                 return;
             }
 
+            const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+            if (!razorpayKey) {
+                alert("Payment key is missing. Please configure NEXT_PUBLIC_RAZORPAY_KEY_ID.");
+                return;
+            }
+
             const options: RazorpayOptions = {
-                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_S2chnbRxpJ0zJI",
+                key: razorpayKey,
                 amount: order.amount, // Use amount from the created order (already in paise)
                 currency: order.currency,
                 name: formData?.title || "SuperProfile",
                 description: "Purchase for " + (selectedProduct?.title || formData?.title),
                 image: formData?.coverImage || "",
                 order_id: order.id,
-                handler: function (response: RazorpayPaymentSuccess) {
-                    console.log("Payment Successful:", response);
+                handler: async function (response: RazorpayPaymentSuccess) {
+                    try {
+                        const verifyRes = await fetch("/api/razorpay/verify", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(response),
+                        });
+                        const verifyData = await verifyRes.json().catch(() => null);
+                        if (!verifyRes.ok || !verifyData?.verified) {
+                            const verifyError = extractApiErrorMessage(verifyData, "Payment verification failed");
+                            alert(`Payment verification failed: ${verifyError}`);
+                            return;
+                        }
+                    } catch (verifyErr) {
+                        logError("public page verify payment", verifyErr);
+                        alert("Payment verification failed. Please contact support if amount was deducted.");
+                        return;
+                    }
+
                     completeCheckout();
                 },
                 prefill: {

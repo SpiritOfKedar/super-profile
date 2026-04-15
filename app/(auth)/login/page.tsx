@@ -32,9 +32,12 @@ export default function LoginPage() {
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [otp, setOtp] = useState("");
     const [rememberMe, setRememberMe] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [needsOtp, setNeedsOtp] = useState(false);
+    const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -58,6 +61,7 @@ export default function LoginPage() {
         }
 
         setErrorMessage(null);
+        setInfoMessage(null);
         setIsSubmitting(true);
 
         try {
@@ -70,10 +74,17 @@ export default function LoginPage() {
                     email,
                     password,
                     rememberMe,
+                    otp: needsOtp ? otp : undefined,
                 }),
             });
 
             const data = await response.json().catch(() => null);
+
+            if (response.status === 202 && data?.requiresOtp) {
+                setNeedsOtp(true);
+                setInfoMessage(data?.message || "OTP sent to your email.");
+                return;
+            }
 
             if (!response.ok || !data?.success) {
                 setErrorMessage(extractApiErrorMessage(data, "Unable to log in"));
@@ -124,6 +135,11 @@ export default function LoginPage() {
                                 {errorMessage}
                             </p>
                         )}
+                        {infoMessage && (
+                            <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700">
+                                {infoMessage}
+                            </p>
+                        )}
 
                         <div className="space-y-4">
                             <div>
@@ -157,6 +173,25 @@ export default function LoginPage() {
                                     placeholder="••••••••"
                                 />
                             </div>
+                            {needsOtp && (
+                                <div>
+                                    <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                                        Email OTP
+                                    </label>
+                                    <input
+                                        id="otp"
+                                        name="otp"
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={4}
+                                        value={otp}
+                                        onChange={(event) => setOtp(event.target.value)}
+                                        required={needsOtp}
+                                        className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                                        placeholder="Enter 4-digit OTP"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -187,7 +222,7 @@ export default function LoginPage() {
                                 disabled={isSubmitting}
                                 className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
                             >
-                                {isSubmitting ? "Logging In..." : "Log In"}
+                                {isSubmitting ? "Logging In..." : needsOtp ? "Verify & Log In" : "Log In"}
                             </button>
                         </div>
                     </form>

@@ -33,8 +33,12 @@ export default function SignupPage() {
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [confirmPassword, setConfirmPassword] = useState("");
+    const [otp, setOtp] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [infoMessage, setInfoMessage] = useState<string | null>(null);
+    const [needsOtp, setNeedsOtp] = useState(false);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -58,6 +62,13 @@ export default function SignupPage() {
         }
 
         setErrorMessage(null);
+        setInfoMessage(null);
+
+        if (password !== confirmPassword) {
+            setErrorMessage("Passwords do not match");
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
@@ -70,10 +81,18 @@ export default function SignupPage() {
                     name,
                     email,
                     password,
+                    otp: needsOtp ? otp : undefined,
                 }),
             });
 
             const data = await response.json().catch(() => null);
+
+            if (response.status === 202 && data?.requiresOtp) {
+                setNeedsOtp(true);
+                setInfoMessage(data?.message || "OTP sent to your email.");
+                return;
+            }
+
             if (!response.ok || !data?.success) {
                 setErrorMessage(extractApiErrorMessage(data, "Unable to create account"));
                 return;
@@ -121,6 +140,11 @@ export default function SignupPage() {
                         {errorMessage && (
                             <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
                                 {errorMessage}
+                            </p>
+                        )}
+                        {infoMessage && (
+                            <p className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700">
+                                {infoMessage}
                             </p>
                         )}
 
@@ -173,6 +197,41 @@ export default function SignupPage() {
                                     placeholder="Create a password"
                                 />
                             </div>
+                            <div>
+                                <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
+                                    Re-enter Password
+                                </label>
+                                <input
+                                    id="confirm-password"
+                                    name="confirm-password"
+                                    type="password"
+                                    value={confirmPassword}
+                                    onChange={(event) => setConfirmPassword(event.target.value)}
+                                    required
+                                    minLength={8}
+                                    className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                                    placeholder="Re-enter your password"
+                                />
+                            </div>
+                            {needsOtp && (
+                                <div>
+                                    <label htmlFor="otp" className="block text-sm font-medium text-gray-700">
+                                        Enter OTP sent to your email
+                                    </label>
+                                    <input
+                                        id="otp"
+                                        name="otp"
+                                        type="text"
+                                        inputMode="numeric"
+                                        maxLength={4}
+                                        value={otp}
+                                        onChange={(event) => setOtp(event.target.value)}
+                                        required={needsOtp}
+                                        className="mt-1 block w-full px-3 py-3 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-black focus:border-black sm:text-sm"
+                                        placeholder="Enter 4-digit OTP"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <div>
@@ -181,7 +240,7 @@ export default function SignupPage() {
                                 disabled={isSubmitting}
                                 className="w-full flex justify-center py-3 px-4 border border-transparent rounded-full shadow-sm text-sm font-medium text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black transition-colors"
                             >
-                                {isSubmitting ? "Creating Account..." : "Sign Up"}
+                                {isSubmitting ? "Creating Account..." : needsOtp ? "Verify & Sign Up" : "Sign Up"}
                             </button>
                         </div>
                     </form>

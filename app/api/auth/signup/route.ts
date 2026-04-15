@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { apiError, badRequest, externalServiceError, internalServerError } from "@/lib/api-error";
 import { DEFAULT_SESSION_DURATION_SECONDS } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
+import { generateOtp, sendEmailOtp, verifyEmailOtp } from "@/lib/auth/email-otp";
 import { signSessionToken } from "@/lib/auth/jwt";
 import { isMongoUnavailable } from "@/lib/mongo-errors";
 import {
@@ -19,6 +20,7 @@ interface SignupBody {
     name?: string;
     email?: string;
     password?: string;
+    otp?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -27,6 +29,7 @@ export async function POST(req: NextRequest) {
         const name = body.name?.trim() || "";
         const email = body.email?.trim() || "";
         const password = body.password || "";
+        const otp = body.otp?.trim() || "";
 
         if (!name) {
             return badRequest("Name is required");
@@ -41,6 +44,31 @@ export async function POST(req: NextRequest) {
         }
 
         const normalizedEmail = normalizeEmail(email);
+        if (!otp) {
+            const existingUser = await findUserByEmail(normalizedEmail);
+            if (existingUser) {
+                return apiError("An account with this email already exists", 409, "BAD_REQUEST");
+            }
+
+            try {
+                await sendEmailOtp(normalizedEmail, generateOtp());
+                return NextResponse.json(
+                    {
+                        success: false,
+                        requiresOtp: true,
+                        message: "A verification code has been sent to your email.",
+                    },
+                    { status: 202 }
+                );
+            } catch (mailError: unknown) {
+                return externalServiceError("Failed to send OTP email. Please check email configuration.");
+            }
+        }
+
+        if (!verifyEmailOtp(normalizedEmail, otp)) {
+            return badRequest("Invalid OTP");
+        }
+
         const existingUser = await findUserByEmail(normalizedEmail);
         if (existingUser) {
             return apiError("An account with this email already exists", 409, "BAD_REQUEST");
