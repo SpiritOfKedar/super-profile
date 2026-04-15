@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { X, Store, List, Book } from "lucide-react";
 import { FlowType } from "@/lib/types";
 
@@ -9,7 +10,7 @@ interface CreateWebsiteModalProps {
 }
 
 export default function CreateWebsiteModal({ onClose, onSelectFlow }: CreateWebsiteModalProps) {
-    const flows = [
+    const flows: { id: FlowType; title: string; sub: string; color: string; icon: ReactNode }[] = [
         { id: "digital", title: "Digital Product", sub: "Sell images, videos, or docs", color: "#E5FFE5", icon: <Store className="text-green-600" size={24} /> },
         { id: "list", title: "Product List", sub: "Showcase multiple items", color: "#FFE5FF", icon: <List className="text-pink-600" size={24} /> },
         { id: "existing", title: "Existing Tools", sub: "Connect your current stack", color: "#E5F1FF", icon: <Book className="text-blue-600" size={24} /> }
@@ -28,7 +29,7 @@ export default function CreateWebsiteModal({ onClose, onSelectFlow }: CreateWebs
                     {flows.map((f, i) => (
                         <button
                             key={i}
-                            onClick={() => onSelectFlow(f.id as any)}
+                            onClick={() => onSelectFlow(f.id)}
                             className="w-full group flex items-center gap-5 p-5 border border-gray-100 rounded-[28px] hover:border-black transition-all bg-[#FCFCFD] text-left active:scale-[0.98]"
                         >
                             <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-110" style={{ backgroundColor: f.color }}>

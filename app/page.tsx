@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 import HistoryView from "./components/HistoryView";
 import CreateWebsiteModal from "./components/CreateWebsiteModal";
-import { FlowType } from "@/lib/types";
+import { FlowType, Website } from "@/lib/types";
 
 export default function App() {
     const router = useRouter();
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [websites, setWebsites] = useState([]);
+    const [websites, setWebsites] = useState<Website[]>([]);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
 
     useEffect(() => {
@@ -60,13 +60,13 @@ export default function App() {
                     lastModified: "3 days ago",
                     type: "digital"
                 }
-            ] as any);
+            ] satisfies Website[]);
         }
     }, []);
 
     const handleDelete = (index: number) => {
         if (index === -1) return;
-        const target = websites[index] as any;
+        const target = websites[index];
         if (target && target.slug) {
             localStorage.removeItem(`website_${target.slug}`);
         }
@@ -111,7 +111,7 @@ export default function App() {
             </div>
 
             <HistoryView
-                websites={websites as any}
+                websites={websites}
                 onOpenCreateModal={() => setIsModalOpen(true)}
                 onDelete={handleDelete}
             />

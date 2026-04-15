@@ -1,12 +1,13 @@
 "use client";
 
 import {
-    X, ChevronDown, Check, Laptop, Smartphone, Copy, Globe, Edit3, Palette, Users, ImageIcon,
-    Upload, Bold, Italic, Underline, AlignLeft, MoreHorizontal, HelpCircle, Info, Layout, Store,
-    Instagram, Twitter, Settings, Shield, Mail, Phone, ExternalLink, Eye, RefreshCw, GripVertical, Plus, ArrowRight
+    X, ChevronDown, Check, Laptop, Smartphone, Copy, Edit3, Users, ImageIcon,
+    Upload, HelpCircle, Info, Layout, Store,
+    Instagram, Twitter, Mail, Phone, ExternalLink, RefreshCw, Plus, ArrowRight
 } from "lucide-react";
 import React, { useDeferredValue, useState, useEffect } from "react";
-import { FormData } from "@/lib/types";
+import { FormData, Product } from "@/lib/types";
+import { readStringArrayField } from "@/lib/builder/form-dynamic";
 import DevicePreview from "./DevicePreview";
 import { getErrorMessage, logError } from "@/lib/error-utils";
 import { persistDigitalPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
@@ -30,9 +31,9 @@ export default function DigitalProductFlow({
 }: DigitalProductFlowProps) {
     const [device, setDevice] = useState<"laptop" | "phone">("laptop");
     const [expandedSection, setExpandedSection] = useState<string | null>(null);
-    const [activeStyleTab, setActiveStyleTab] = useState<"Backgrounds" | "Buttons" | "Images">("Backgrounds");
+    const [activeStyleTab, setActiveStyleTab] = useState<"Backgrounds" | "Buttons">("Backgrounds");
     const [isPublishing, setIsPublishing] = useState(false);
-    const [publishingStep, setPublishingStep] = useState(0);
+    const [, setPublishingStep] = useState(0);
     const [tempCoverLink, setTempCoverLink] = useState("");
     const [tempTestimonialLink, setTempTestimonialLink] = useState("");
     const [isUploading, setIsUploading] = useState(false);
@@ -77,7 +78,7 @@ export default function DigitalProductFlow({
                     uploadKey: field,
                     applyLocal: (localUrl) => {
                         if (isArray) {
-                            const currentArr = (formData as any)[field] || [];
+                            const currentArr = readStringArrayField(formData, field);
                             patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
                         } else {
                             patchFormData({ [field]: localUrl } as Partial<FormData>);
@@ -86,7 +87,7 @@ export default function DigitalProductFlow({
                     applyRemote: (remoteUrl, localUrl) => {
                         updateFormData((prev: FormData) => {
                             if (isArray) {
-                                const currentArr = (prev as any)[field] || [];
+                                const currentArr = readStringArrayField(prev, field);
                                 return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
                             }
 
@@ -126,7 +127,7 @@ export default function DigitalProductFlow({
         });
     };
 
-    const updateProduct = (id: string, field: string, value: any) => {
+    const updateProduct = <K extends keyof Product>(id: string, field: K, value: Product[K]) => {
         const newProducts = (formData.products || []).map(p =>
             p.id === id ? { ...p, [field]: value } : p
         );
@@ -257,7 +258,7 @@ export default function DigitalProductFlow({
                                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
                                             {formData.testimonialImage ? <img src={formData.testimonialImage} className="w-full h-full object-cover" /> : <Users size={24} className="text-gray-300" />}
                                         </div>
-                                        <p className={`font-bold italic leading-relaxed text-[15px] ${formData.themeId === 'tech' || formData.themeId === 'dusk' ? 'text-gray-300' : 'text-gray-600'} break-words whitespace-pre-wrap`}>"{formData.testimonialComment || "No comment yet"}"</p>
+                                        <p className={`font-bold italic leading-relaxed text-[15px] ${formData.themeId === 'tech' || formData.themeId === 'dusk' ? 'text-gray-300' : 'text-gray-600'} break-words whitespace-pre-wrap`}><span className="not-italic">&ldquo;</span>{formData.testimonialComment || "No comment yet"}<span className="not-italic">&rdquo;</span></p>
                                         <p className="font-black text-[14px] break-words">— {formData.testimonialName}</p>
                                     </div>
                                 </div>
@@ -944,10 +945,10 @@ export default function DigitalProductFlow({
 
                                 <div className="border border-gray-100 rounded-[28px] overflow-hidden bg-white shadow-sm">
                                     <div className="flex p-1 bg-gray-50 rounded-[24px] m-4">
-                                        {["Backgrounds", "Buttons"].map(tab => (
+                                        {(["Backgrounds", "Buttons"] as const).map((tab) => (
                                             <button
                                                 key={tab}
-                                                onClick={() => setActiveStyleTab(tab as any)}
+                                                onClick={() => setActiveStyleTab(tab)}
                                                 className={`flex-1 py-2.5 rounded-[20px] text-[11px] font-black transition-all ${activeStyleTab === tab ? 'bg-black text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}
                                             >
                                                 {tab}
@@ -1093,11 +1094,11 @@ export default function DigitalProductFlow({
                             <div className="space-y-6 pt-8 border-t border-gray-100">
                                 <h2 className="text-[12px] font-black text-gray-400 uppercase tracking-[0.2em]">Terms and Policies</h2>
                                 <div className="space-y-5">
-                                    {[
-                                        { label: "Terms and Conditions", field: "termsAndConditions" },
-                                        { label: "Refund Policy", field: "refundPolicy" },
-                                        { label: "Privacy Policy", field: "privacyPolicy" }
-                                    ].map(policy => (
+                                    {([
+                                        { label: "Terms and Conditions", field: "termsAndConditions" as const },
+                                        { label: "Refund Policy", field: "refundPolicy" as const },
+                                        { label: "Privacy Policy", field: "privacyPolicy" as const }
+                                    ] as const).map((policy) => (
                                         <div key={policy.field} className="space-y-2.5">
                                             <div className="flex justify-between items-baseline px-1">
                                                 <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest">{policy.label}</label>
@@ -1106,7 +1107,7 @@ export default function DigitalProductFlow({
                                             <textarea
                                                 className="w-full px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[20px] text-[13px] font-medium outline-none focus:border-black focus:bg-white transition-all shadow-sm resize-none h-[120px]"
                                                 placeholder={`Enter your ${policy.label.toLowerCase()}...`}
-                                                value={(formData as any)[policy.field] || ""}
+                                                value={formData[policy.field] ?? ""}
                                                 onChange={e => patchFormData({ [policy.field]: e.target.value })}
                                             />
                                         </div>
@@ -1144,12 +1145,12 @@ export default function DigitalProductFlow({
                                 <h2 className="text-[12px] font-black text-gray-400 uppercase tracking-[0.2em]">Additional Settings</h2>
 
                                 <div className="space-y-6">
-                                    {[
-                                        { id: 'darkTheme', title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
-                                        { id: 'deactivateSales', title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
-                                        { id: 'pageExpiry', title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
-                                        { id: 'trackingToggle', title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
-                                    ].map((item) => (
+                                    {([
+                                        { id: 'darkTheme' as const, title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
+                                        { id: 'deactivateSales' as const, title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
+                                        { id: 'pageExpiry' as const, title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
+                                        { id: 'trackingToggle' as const, title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
+                                    ] as const).map((item) => (
                                         <React.Fragment key={item.id}>
                                             <div className="flex items-center justify-between group">
                                                 <div className="space-y-1.5 pr-8">
@@ -1157,10 +1158,10 @@ export default function DigitalProductFlow({
                                                     {item.sub && <p className="text-[11px] font-bold text-gray-400 leading-relaxed max-w-[320px]">{item.sub}</p>}
                                                 </div>
                                                 <div
-                                                    onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
-                                                    className={`w-12 h-7 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
+                                                    onClick={() => patchFormData({ [item.id]: !Boolean(formData[item.id]) })}
+                                                    className={`w-12 h-7 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${formData[item.id] ? 'bg-black' : 'bg-gray-100'}`}
                                                 >
-                                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-6' : 'left-1'}`} />
+                                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${formData[item.id] ? 'left-6' : 'left-1'}`} />
                                                 </div>
                                             </div>
                                             {item.id === 'pageExpiry' && formData.pageExpiry && (

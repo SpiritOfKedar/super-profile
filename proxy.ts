@@ -35,7 +35,7 @@ function unauthorizedApiResponse(): NextResponse {
     );
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
     const { pathname, search } = req.nextUrl;
     const isProtectedPage = pathname === "/" || pathname.startsWith("/builder");
     const isAuthPage = pathname === "/login" || pathname === "/signup";

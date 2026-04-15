@@ -2,13 +2,13 @@
 
 import {
    X, ChevronDown, Check, Upload, Bold, Italic, Underline, AlignLeft,
-   List as ListIcon, Trash2, Edit3, Globe, Copy, Info, RefreshCw, Plus,
-   Search, Store, FileText, Image as ImageIcon, HelpCircle, Users,
-   Layout, Mail, Phone, ArrowRight, Save, Clock, Trash, ChevronLeft,
-   Instagram, Twitter, ExternalLink
+   List as ListIcon, Trash2, Edit3, Globe, Copy, RefreshCw, Plus,
+   Users,
+   Mail, Phone, Twitter, ExternalLink
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { FormData, Product } from "@/lib/types";
+import { FormData } from "@/lib/types";
+import { readStringArrayField } from "@/lib/builder/form-dynamic";
 import { getErrorMessage, logError } from "@/lib/error-utils";
 import { persistListPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
 import { uploadWithOptimistic } from "@/lib/builder/upload";
@@ -38,8 +38,6 @@ export default function ListProductFlow({
    const [currentHost, setCurrentHost] = useState("");
    const [tempImageUrl, setTempImageUrl] = useState("");
    const [expandedSection, setExpandedSection] = useState<string | null>(null);
-   const [tempTestimonialLink, setTempTestimonialLink] = useState("");
-   const descRef = useState<HTMLTextAreaElement | null>(null)[0]; // Placeholder for ref logic
 
    useEffect(() => {
       if (typeof window !== "undefined") {
@@ -165,7 +163,7 @@ export default function ListProductFlow({
                uploadKey: field,
                applyLocal: (localUrl) => {
                   if (isArray) {
-                     const currentArr = (formData as any)[field] || [];
+                     const currentArr = readStringArrayField(formData, field);
                      patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
                   } else {
                      patchFormData({ [field]: localUrl } as Partial<FormData>);
@@ -174,7 +172,7 @@ export default function ListProductFlow({
                applyRemote: (remoteUrl, localUrl) => {
                   updateFormData((prev: FormData) => {
                      if (isArray) {
-                        const currentArr = (prev as any)[field] || [];
+                        const currentArr = readStringArrayField(prev, field);
                         return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
                      }
 
@@ -414,7 +412,7 @@ export default function ListProductFlow({
                                                 <div key={i} className="aspect-square rounded-2xl overflow-hidden border border-gray-200 relative group shadow-sm">
                                                    <img src={img} className="w-full h-full object-cover" />
                                                    <button
-                                                      onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_: any, idx: number) => idx !== i) })}
+                                                      onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_, idx) => idx !== i) })}
                                                       className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                                    >
                                                       <X size={12} />
@@ -457,7 +455,7 @@ export default function ListProductFlow({
 
                                     {item.id === "faq" && (
                                        <div className="space-y-6">
-                                          {formData.faqs?.map((faq: any, idx: number) => (
+                                          {formData.faqs?.map((faq, idx) => (
                                              <div key={idx} className="p-6 bg-white border border-gray-100 rounded-[24px] space-y-4 relative group shadow-sm">
                                                 <button
                                                    onClick={() => {
@@ -850,22 +848,22 @@ export default function ListProductFlow({
                   </div>
 
                   <div className="space-y-8 pt-4">
-                     {[
-                        { id: 'darkTheme', title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
-                        { id: 'deactivateSales', title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
-                        { id: 'pageExpiry', title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
-                        { id: 'trackingToggle', title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
-                     ].map((item) => (
+                     {([
+                        { id: 'darkTheme' as const, title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
+                        { id: 'deactivateSales' as const, title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
+                        { id: 'pageExpiry' as const, title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
+                        { id: 'trackingToggle' as const, title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
+                     ] as const).map((item) => (
                         <div key={item.id} className="flex items-center justify-between group">
                            <div className="space-y-1 pr-10">
                               <h3 className="text-[17px] font-black text-gray-900 group-hover:translate-x-1 transition-transform">{item.title}</h3>
                               {item.sub && <p className="text-[13px] font-bold text-gray-400 leading-relaxed max-w-md">{item.sub}</p>}
                            </div>
                            <div
-                              onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
-                              className={`w-14 h-8 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
+                              onClick={() => patchFormData({ [item.id]: !Boolean(formData[item.id]) })}
+                              className={`w-14 h-8 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${formData[item.id] ? 'bg-black' : 'bg-gray-100'}`}
                            >
-                              <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-7' : 'left-1'}`} />
+                              <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${formData[item.id] ? 'left-7' : 'left-1'}`} />
                            </div>
                         </div>
                      ))}

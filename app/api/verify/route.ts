@@ -47,15 +47,12 @@ export async function POST(req: NextRequest) {
                     `,
                 });
                 console.log(`[VERIFICATION] Email OTP sent to ${target}`);
-            } catch (mailError: any) {
+            } catch (mailError: unknown) {
                 console.error("Email sending error:", mailError);
-                // Still log for debug if SMTP is not configured
-                console.log(`[DEBUG] Email OTP was: ${otp}`);
                 return externalServiceError("Failed to send email. Please check SMTP configuration.");
             }
         } else {
-            // For phone, we still log to console until SMS provider is added
-            console.log(`[VERIFICATION] Sent phone OTP: ${otp} to ${target}`);
+            console.log("[VERIFICATION] Phone OTP requested (SMS delivery not implemented).");
         }
 
         return NextResponse.json({

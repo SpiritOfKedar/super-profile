@@ -1,15 +1,50 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import Script from "next/script";
-import { FormData, Product } from "@/lib/types";
+import { FormData, Product, Website } from "@/lib/types";
 import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
 import {
-    Check, X, Plus, HelpCircle, Mail, Phone, Users, Instagram, Twitter, Globe,
-    ArrowRight, Star, ShoppingBag, ShieldCheck, Lock, ChevronDown, RefreshCw,
-    Loader2, Sparkles, Store, Image as ImageIcon
+    Check, X, Mail, Phone, Users, Instagram, Twitter, Globe,
+    ArrowRight, ShoppingBag, ShieldCheck, Lock, RefreshCw,
+    Loader2, Sparkles, Store
 } from "lucide-react";
+
+interface RazorpayPaymentSuccess {
+    razorpay_payment_id?: string;
+}
+
+interface RazorpayFailurePayload {
+    error?: unknown;
+}
+
+interface RazorpayOptions {
+    key: string;
+    amount: number;
+    currency: string;
+    name: string;
+    description: string;
+    image: string;
+    order_id: string;
+    handler: (response: RazorpayPaymentSuccess) => void;
+    prefill: { email: string; contact: string };
+    theme: { color: string };
+    modal: { ondismiss: () => void };
+}
+
+interface RazorpayInstance {
+    on(event: "payment.failed", handler: (response: RazorpayFailurePayload) => void): void;
+    open(): void;
+}
+
+type RazorpayConstructor = new (options: RazorpayOptions) => RazorpayInstance;
+
+declare global {
+    interface Window {
+        Razorpay?: RazorpayConstructor;
+    }
+}
 
 export default function PublicProductPage() {
     const params = useParams();
@@ -105,7 +140,7 @@ export default function PublicProductPage() {
                 <X className="text-red-500" size={32} />
             </div>
             <h1 className="text-2xl font-black text-gray-900 mb-2">Website Not Found</h1>
-            <p className="text-gray-500 font-medium">This page hasn't been published yet or the link is incorrect.</p>
+            <p className="text-gray-500 font-medium">This page has not been published yet or the link is incorrect.</p>
         </div>
     );
 
@@ -311,12 +346,13 @@ export default function PublicProductPage() {
             }
 
             // 2. Open Razorpay Checkout
-            if (!(window as any).Razorpay) {
+            const Razorpay = window.Razorpay;
+            if (!Razorpay) {
                 alert("Razorpay SDK not loaded. Please check your connection or disable adblockers.");
                 return;
             }
 
-            const options = {
+            const options: RazorpayOptions = {
                 key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_S2chnbRxpJ0zJI",
                 amount: order.amount, // Use amount from the created order (already in paise)
                 currency: order.currency,
@@ -324,8 +360,7 @@ export default function PublicProductPage() {
                 description: "Purchase for " + (selectedProduct?.title || formData?.title),
                 image: formData?.coverImage || "",
                 order_id: order.id,
-                handler: function (response: any) {
-                    // Payment successful
+                handler: function (response: RazorpayPaymentSuccess) {
                     console.log("Payment Successful:", response);
                     completeCheckout();
                 },
@@ -343,8 +378,8 @@ export default function PublicProductPage() {
                 }
             };
 
-            const rzp = new (window as any).Razorpay(options);
-            rzp.on('payment.failed', function (response: any) {
+            const rzp = new Razorpay(options);
+            rzp.on("payment.failed", function (response: RazorpayFailurePayload) {
                 const failureMessage = extractApiErrorMessage(response?.error, "Payment failed");
                 alert("Payment Failed: " + failureMessage);
             });
@@ -369,8 +404,8 @@ export default function PublicProductPage() {
         // Update websites_list in localStorage
         const rawList = localStorage.getItem('websites_list');
         if (rawList) {
-            const list = JSON.parse(rawList);
-            const index = list.findIndex((s: any) => s.slug === slug);
+            const list = JSON.parse(rawList) as Website[];
+            const index = list.findIndex((s) => s.slug === slug);
             if (index !== -1) {
                 const site = list[index];
                 const currentRev = parseInt(site.revenue?.replace(/[^\d]/g, '') || '0');
@@ -454,7 +489,7 @@ export default function PublicProductPage() {
 
                     {formData.products && formData.products.filter(p => p.title || p.price).length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                            {formData.products.filter(p => p.title || p.price).map((product, idx) => (
+                            {formData.products.filter(p => p.title || p.price).map((product) => (
                                 <div key={product.id} className={`group p-8 md:p-10 rounded-[64px] border ${style.border} ${style.card} shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] hover:shadow-[0_64px_128px_-32px_rgba(0,0,0,0.2)] transition-all duration-700 hover:-translate-y-3 relative overflow-hidden flex flex-col`}>
                                     <div className={`absolute -top-20 -right-20 w-80 h-80 bg-gradient-to-br ${style.gradient} opacity-20 blur-3xl pointer-events-none`} />
                                     <div className="flex flex-col gap-8 relative z-10 flex-1">
@@ -606,7 +641,9 @@ export default function PublicProductPage() {
                                 </div>
                                 <div className="space-y-6 max-w-3xl">
                                     <p className="text-2xl md:text-4xl font-black italic leading-[1.2] tracking-tight">
-                                        "{formData.testimonialComment || "Absolutely life-changing experience. Highly recommended for anyone looking to scale their digital presence!"}"
+                                        <span className="not-italic">&ldquo;</span>
+                                        {formData.testimonialComment || "Absolutely life-changing experience. Highly recommended for anyone looking to scale their digital presence!"}
+                                        <span className="not-italic">&rdquo;</span>
                                     </p>
                                     <div className="space-y-1">
                                         <h4 className="text-xl font-black uppercase tracking-widest">{formData.testimonialName}</h4>

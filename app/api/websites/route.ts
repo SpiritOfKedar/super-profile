@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
             { upsert: true }
         );
 
-        console.log(`DEBUG: Website ${slug} published and indexed.`);
+        console.log(`[websites] Published slug=${slug}`);
 
         return NextResponse.json({ success: true });
     } catch (error: unknown) {
