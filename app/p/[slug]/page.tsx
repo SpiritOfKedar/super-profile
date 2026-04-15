@@ -67,6 +67,10 @@ export default function PublicProductPage() {
     const [showEmailOtp, setShowEmailOtp] = useState(false);
     const [showPhoneOtp, setShowPhoneOtp] = useState(false);
     const [customAmount, setCustomAmount] = useState("");
+    const [policyModal, setPolicyModal] = useState<{
+        title: "Terms" | "Privacy" | "Refunds";
+        content: string;
+    } | null>(null);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -419,6 +423,21 @@ export default function PublicProductPage() {
         }
     };
 
+    const openPolicyModal = (policy: "Terms" | "Privacy" | "Refunds") => {
+        if (!formData) return;
+        const content =
+            policy === "Terms"
+                ? formData.termsAndConditions
+                : policy === "Privacy"
+                    ? formData.privacyPolicy
+                    : formData.refundPolicy;
+
+        setPolicyModal({
+            title: policy,
+            content: (content || "Not specified.").trim(),
+        });
+    };
+
     return (
         <div
             className={`min-h-screen ${style.bg} ${style.text} transition-colors duration-700 selection:bg-black selection:text-white`}
@@ -678,10 +697,7 @@ export default function PublicProductPage() {
                             {["Terms", "Privacy", "Refunds"].map((policy) => (
                                 <button
                                     key={policy}
-                                    onClick={() => {
-                                        const content = policy === "Terms" ? formData.termsAndConditions : policy === "Privacy" ? formData.privacyPolicy : formData.refundPolicy;
-                                        alert(`${policy}\n\n${content || "Not specified."}`);
-                                    }}
+                                    onClick={() => openPolicyModal(policy as "Terms" | "Privacy" | "Refunds")}
                                     className="text-[11px] font-black uppercase tracking-[0.4em] opacity-30 hover:opacity-100 transition-opacity flex items-center gap-2 group"
                                 >
                                     <span className="w-1.5 h-1.5 rounded-full bg-current opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -703,6 +719,38 @@ export default function PublicProductPage() {
                     </div>
                 </footer>
             </div>
+
+            {/* Policy Content Modal */}
+            {policyModal && (
+                <div className="fixed inset-0 z-[95] flex items-center justify-center px-4 py-8 animate-in fade-in duration-300">
+                    <button
+                        type="button"
+                        aria-label="Close policy modal"
+                        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+                        onClick={() => setPolicyModal(null)}
+                    />
+                    <div className="relative w-full max-w-3xl max-h-[85vh] rounded-[32px] bg-white shadow-[0_40px_120px_-24px_rgba(0,0,0,0.45)] border border-gray-100 overflow-hidden">
+                        <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100">
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.35em]">Policy</p>
+                                <h3 className="text-2xl font-black text-gray-900">{policyModal.title}</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPolicyModal(null)}
+                                className="p-3 rounded-full hover:bg-gray-100 transition-colors"
+                            >
+                                <X size={20} className="text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="px-8 py-6 overflow-y-auto max-h-[calc(85vh-96px)]">
+                            <p className="text-[15px] leading-relaxed text-gray-700 whitespace-pre-wrap">
+                                {policyModal.content}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Premium Checkout Modal */}
             {showCheckout && (
