@@ -471,10 +471,10 @@ export default function PublicProductPage() {
                         )}
                     </div>
 
-                    {formData.digitalFilesImage || formData.coverImage ? (
+                    {formData.coverImage || formData.digitalFilesImage ? (
                         <div className={`w-full aspect-video rounded-[64px] overflow-hidden shadow-[0_80px_160px_-40px_rgba(0,0,0,0.4)] border ${style.border} relative group mt-8 p-1 bg-white/5`}>
                             <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent z-10 pointer-events-none" />
-                            <img src={formData.digitalFilesImage || formData.coverImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 rounded-[60px]" alt="Cover" />
+                            <img src={formData.coverImage || formData.digitalFilesImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 rounded-[60px]" alt="Cover" />
                         </div>
                     ) : null}
                 </header>
@@ -532,7 +532,7 @@ export default function PublicProductPage() {
                             <div className={`absolute -bottom-24 -left-24 w-[500px] h-[500px] bg-gradient-to-tr ${style.gradient} opacity-20 blur-[120px] pointer-events-none group-hover:opacity-40 transition-opacity duration-1000`} />
                             <div className="flex flex-col gap-12 relative z-10 w-full items-center">
                                 <div className="w-full max-w-md aspect-square rounded-[56px] overflow-hidden border border-white/10 shadow-3xl relative shrink-0">
-                                    <img src={formData.digitalFilesImage || formData.coverImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                                    <img src={formData.coverImage || formData.digitalFilesImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                                 <div className="flex flex-col items-center space-y-8 w-full">
