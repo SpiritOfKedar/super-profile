@@ -1,5 +1,36 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Docker (Frontend + Backend)
+
+This app is a single Next.js service (UI + API routes together). MongoDB stays on Atlas.
+
+### Prerequisites
+
+- Docker + Docker Compose installed
+- Valid MongoDB Atlas connection string in `.env` (`MONGODB_URI`)
+- Required app secrets set in `.env` (`AUTH_SECRET`, Cloudinary keys, etc.)
+
+### Run with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+App will be available at [http://localhost:3000](http://localhost:3000).
+
+### Run with plain Docker
+
+```bash
+docker build -t super-profile .
+docker run --rm -p 3000:3000 --env-file .env super-profile
+```
+
+### Stop containers
+
+```bash
+docker compose down
+```
+
 ## Getting Started
 
 First, run the development server:

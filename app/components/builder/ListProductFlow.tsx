@@ -2,13 +2,13 @@
 
 import {
    X, ChevronDown, Check, Upload, Bold, Italic, Underline, AlignLeft,
-   List as ListIcon, Trash2, Edit3, Globe, Copy, Info, RefreshCw, Plus,
-   Search, Store, FileText, Image as ImageIcon, HelpCircle, Users,
-   Layout, Mail, Phone, ArrowRight, Save, Clock, Trash, ChevronLeft,
-   Instagram, Twitter, ExternalLink
+   List as ListIcon, Trash2, Edit3, Globe, Copy, RefreshCw, Plus,
+   Users,
+   Mail, Phone, Twitter, ExternalLink
 } from "lucide-react";
-import { useState, useEffect } from "react";
-import { FormData, Product } from "@/lib/types";
+import { useState, useEffect, useRef } from "react";
+import { FormData } from "@/lib/types";
+import { readStringArrayField } from "@/lib/builder/form-dynamic";
 import { getErrorMessage, logError } from "@/lib/error-utils";
 import { persistListPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
 import { uploadWithOptimistic } from "@/lib/builder/upload";
@@ -35,11 +35,15 @@ export default function ListProductFlow({
    const [isPublishing, setIsPublishing] = useState(false);
    const [publishingStep, setPublishingStep] = useState(0);
    const [isUploading, setIsUploading] = useState(false);
+   const [publishWarning, setPublishWarning] = useState<string | null>(null);
    const [currentHost, setCurrentHost] = useState("");
+   const [currentUsername, setCurrentUsername] = useState("");
+   const [publishedPath, setPublishedPath] = useState("");
    const [tempImageUrl, setTempImageUrl] = useState("");
-   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+   const [tempGalleryLink, setTempGalleryLink] = useState("");
    const [tempTestimonialLink, setTempTestimonialLink] = useState("");
-   const descRef = useState<HTMLTextAreaElement | null>(null)[0]; // Placeholder for ref logic
+   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
    useEffect(() => {
       if (typeof window !== "undefined") {
@@ -47,8 +51,27 @@ export default function ListProductFlow({
       }
    }, []);
 
+   useEffect(() => {
+      fetch("/api/auth/session")
+         .then((res) => res.json())
+         .then((data) => {
+            if (data?.authenticated && data?.user?.username) {
+               setCurrentUsername(data.user.username);
+            }
+         })
+         .catch(() => undefined);
+   }, []);
+
+   const normalizeImageUrl = (raw: string): string => {
+      const trimmed = raw.trim();
+      if (!trimmed) return "";
+      if (/^https?:\/\//i.test(trimmed)) return trimmed;
+      return `https://${trimmed}`;
+   };
+
    const handlePublish = async () => {
       setIsPublishing(true);
+      setPublishWarning(null);
       const steps = ["Optimizing product list...", "Generating collection page...", "Securing checkout flows...", "Publishing to global CDN..."];
 
       for (let i = 0; i < steps.length; i++) {
@@ -58,13 +81,33 @@ export default function ListProductFlow({
 
       const { websiteEntry } = persistListPublish(formData);
 
-      try {
-         await syncPublishedWebsiteIndex(formData, websiteEntry);
-      } catch (err) {
-         logError("list flow publish sync", err);
-      }
+      const syncResult = await syncPublishedWebsiteIndex(formData, websiteEntry);
 
       setIsPublishing(false);
+      if (!syncResult.synced) {
+         const message = syncResult.errorMessage || "Failed to publish";
+         setPublishWarning(message);
+         alert(`Saved locally, but cloud publish failed: ${message}`);
+         return;
+      }
+
+      const livePath = syncResult.publicPath || `/p/${websiteEntry.slug || "my-collection"}`;
+      setPublishedPath(livePath);
+      if (websiteEntry.slug) {
+         const rawList = localStorage.getItem("websites_list");
+         if (rawList) {
+            const list = JSON.parse(rawList) as Array<{ slug?: string; ownerUsername?: string; publicPath?: string }>;
+            const next = list.map((item) => item.slug === websiteEntry.slug ? { ...item, ownerUsername: syncResult.ownerUsername, publicPath: livePath } : item);
+            localStorage.setItem("websites_list", JSON.stringify(next));
+         }
+         if (syncResult.ownerUsername) {
+            const savedRaw = localStorage.getItem(`website_${websiteEntry.slug}`);
+            if (savedRaw) {
+               localStorage.setItem(`website_${syncResult.ownerUsername}_${websiteEntry.slug}`, savedRaw);
+            }
+         }
+      }
+
       setIsLive(true);
    };
 
@@ -100,6 +143,7 @@ export default function ListProductFlow({
 
    if (isLive) {
       const slug = formData.customPageUrl || formData.title?.toLowerCase().replace(/[^a-z0-9]/g, '-') || "my-collection";
+      const livePath = publishedPath || (currentUsername ? `/u/${currentUsername}/p/${slug}` : `/p/${slug}`);
       return (
          <div className="fixed inset-0 z-[100] bg-white animate-in fade-in duration-500 flex flex-col items-center justify-center p-12">
             <div className="max-w-xl w-full flex flex-col items-center text-center space-y-8 py-12">
@@ -114,15 +158,15 @@ export default function ListProductFlow({
                   <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest text-center">Public URL</p>
                   <div className="flex items-center p-1.5 bg-gray-50 rounded-[30px] border border-gray-100 shadow-inner group/url">
                      <a
-                        href={`/p/${slug}`}
+                        href={livePath}
                         target="_blank"
                         className="flex-1 px-6 py-4 font-bold text-blue-600 text-[14px] overflow-hidden text-ellipsis whitespace-nowrap hover:underline decoration-2 underline-offset-4"
                      >
-                        {currentHost.replace(/^https?:\/\//, '')}/p/{slug}
+                        {currentHost.replace(/^https?:\/\//, '')}{livePath}
                      </a>
                      <button
                         onClick={() => {
-                           navigator.clipboard.writeText(`${currentHost}/p/${slug}`);
+                           navigator.clipboard.writeText(`${currentHost}${livePath}`);
                         }}
                         className="px-6 py-4 bg-white rounded-[24px] font-black text-[12px] shadow-sm hover:bg-gray-50 transition-all active:scale-95 flex items-center gap-2 group border border-gray-100"
                      >
@@ -132,7 +176,7 @@ export default function ListProductFlow({
                </div>
                <div className="flex w-full gap-4 pt-6">
                   <button
-                     onClick={() => window.open(`/p/${slug}`, '_blank')}
+                     onClick={() => window.open(livePath, '_blank')}
                      className="flex-1 bg-black text-white py-5 rounded-[30px] font-black text-base shadow-xl hover:opacity-90 transition-all flex items-center justify-center gap-3"
                   >
                      <Globe size={20} /> Preview
@@ -165,7 +209,7 @@ export default function ListProductFlow({
                uploadKey: field,
                applyLocal: (localUrl) => {
                   if (isArray) {
-                     const currentArr = (formData as any)[field] || [];
+                     const currentArr = readStringArrayField(formData, field);
                      patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
                   } else {
                      patchFormData({ [field]: localUrl } as Partial<FormData>);
@@ -174,7 +218,7 @@ export default function ListProductFlow({
                applyRemote: (remoteUrl, localUrl) => {
                   updateFormData((prev: FormData) => {
                      if (isArray) {
-                        const currentArr = (prev as any)[field] || [];
+                        const currentArr = readStringArrayField(prev, field);
                         return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
                      }
 
@@ -189,6 +233,25 @@ export default function ListProductFlow({
             setIsUploading(false);
          }
       }
+   };
+
+   const wrapDescriptionSelection = (prefix: string, suffix: string = prefix) => {
+      const textarea = descriptionRef.current;
+      if (!textarea) return;
+
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const text = textarea.value || "";
+      const selected = text.slice(start, end);
+      const nextText = `${text.slice(0, start)}${prefix}${selected}${suffix}${text.slice(end)}`;
+      const cursorPos = selected.length > 0 ? end + prefix.length + suffix.length : start + prefix.length;
+
+      patchFormData({ description: nextText });
+
+      window.requestAnimationFrame(() => {
+         textarea.focus();
+         textarea.setSelectionRange(cursorPos, cursorPos);
+      });
    };
 
    return (
@@ -220,6 +283,11 @@ export default function ListProductFlow({
          </header>
 
          <main className="pt-32 pb-40 px-6 max-w-4xl mx-auto flex flex-col items-center">
+            {publishWarning && (
+               <div className="w-full mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
+                  Cloud publish failed: {publishWarning}
+               </div>
+            )}
             {step === 1 ? (
                <div className="w-full space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {/* Title Section */}
@@ -230,7 +298,7 @@ export default function ListProductFlow({
                      <div className="relative">
                         <input
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
-                           value={formData.title}
+                           value={formData.title ?? ""}
                            onChange={e => patchFormData({ title: e.target.value })}
                            placeholder="Website Page Title"
                         />
@@ -244,7 +312,7 @@ export default function ListProductFlow({
                      <div className="relative group">
                         <select
                            className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm appearance-none cursor-pointer"
-                           value={formData.category}
+                           value={formData.category ?? ""}
                            onChange={e => patchFormData({ category: e.target.value })}
                         >
                            <option value="" disabled>Select a category</option>
@@ -321,45 +389,30 @@ export default function ListProductFlow({
                            </div>
                            <div className="flex items-center gap-1">
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}**${selection}**${after}` });
+                                    wrapDescriptionSelection("**");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
                                  <Bold size={16} className="text-gray-900" />
                               </button>
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}_${selection}_${after}` });
+                                    wrapDescriptionSelection("_");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
                                  <Italic size={16} className="text-gray-900" />
                               </button>
                               <button
+                                 type="button"
+                                 onMouseDown={(e) => e.preventDefault()}
                                  onClick={() => {
-                                    const el = document.getElementById('desc-area') as HTMLTextAreaElement;
-                                    const start = el.selectionStart;
-                                    const end = el.selectionEnd;
-                                    const text = el.value;
-                                    const before = text.substring(0, start);
-                                    const selection = text.substring(start, end);
-                                    const after = text.substring(end);
-                                    patchFormData({ description: `${before}<u>${selection}</u>${after}` });
+                                    wrapDescriptionSelection("<u>", "</u>");
                                  }}
                                  className="p-1.5 hover:bg-white rounded transition-all"
                               >
@@ -369,9 +422,10 @@ export default function ListProductFlow({
                         </div>
                         <textarea
                            id="desc-area"
+                           ref={descriptionRef}
                            className="w-full h-48 px-6 py-5 text-[14px] font-bold outline-none border-none resize-none placeholder:text-gray-200 font-sans"
                            placeholder="Add description..."
-                           value={formData.description}
+                           value={formData.description ?? ""}
                            onChange={e => patchFormData({ description: e.target.value })}
                         />
                      </div>
@@ -409,12 +463,32 @@ export default function ListProductFlow({
                                              value={formData.galleryTitle || ""}
                                              onChange={e => patchFormData({ galleryTitle: e.target.value })}
                                           />
+                                          <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
+                                             <input
+                                                className="flex-1 bg-transparent px-4 py-2 text-[12px] font-bold outline-none"
+                                                placeholder="Paste image link"
+                                                value={tempGalleryLink}
+                                                onChange={(e) => setTempGalleryLink(e.target.value)}
+                                             />
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   if (!tempGalleryLink) return;
+                                                   const existing = formData.galleryImages || [];
+                                                   patchFormData({ galleryImages: [...existing, tempGalleryLink] });
+                                                   setTempGalleryLink("");
+                                                }}
+                                                className="px-5 py-2.5 bg-white border border-gray-100 rounded-xl text-[11px] font-black shadow-sm"
+                                             >
+                                                Add Link
+                                             </button>
+                                          </div>
                                           <div className="grid grid-cols-4 gap-4">
                                              {formData.galleryImages?.map((img: string, i: number) => (
                                                 <div key={i} className="aspect-square rounded-2xl overflow-hidden border border-gray-200 relative group shadow-sm">
                                                    <img src={img} className="w-full h-full object-cover" />
                                                    <button
-                                                      onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_: any, idx: number) => idx !== i) })}
+                                                      onClick={() => patchFormData({ galleryImages: formData.galleryImages?.filter((_, idx) => idx !== i) })}
                                                       className="absolute top-2 right-2 bg-black/50 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                                                    >
                                                       <X size={12} />
@@ -440,6 +514,41 @@ export default function ListProductFlow({
                                                 <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'testimonialImage')} />
                                              </label>
                                           </div>
+                                          <div className="flex items-center gap-2 bg-white p-1.5 rounded-2xl border border-gray-200">
+                                             <input
+                                                className="flex-1 bg-transparent px-4 py-2 text-[12px] font-bold outline-none"
+                                                placeholder="Paste image link"
+                                                value={tempTestimonialLink}
+                                                onChange={(e) => setTempTestimonialLink(e.target.value)}
+                                                onPaste={(e) => {
+                                                   const pasted = e.clipboardData.getData("text");
+                                                   const normalized = normalizeImageUrl(pasted);
+                                                   if (!normalized) return;
+                                                   e.preventDefault();
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                                onKeyDown={(e) => {
+                                                   if (e.key !== "Enter") return;
+                                                   const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                   if (!normalized) return;
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                             />
+                                             <button
+                                                type="button"
+                                                onClick={() => {
+                                                   const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                   if (!normalized) return;
+                                                   patchFormData({ testimonialImage: normalized });
+                                                   setTempTestimonialLink("");
+                                                }}
+                                                className="px-5 py-2.5 bg-white border border-gray-100 rounded-xl text-[11px] font-black shadow-sm"
+                                             >
+                                                Add Link
+                                             </button>
+                                          </div>
                                           <input
                                              className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                              placeholder="Customer Name"
@@ -457,7 +566,7 @@ export default function ListProductFlow({
 
                                     {item.id === "faq" && (
                                        <div className="space-y-6">
-                                          {formData.faqs?.map((faq: any, idx: number) => (
+                                          {formData.faqs?.map((faq, idx) => (
                                              <div key={idx} className="p-6 bg-white border border-gray-100 rounded-[24px] space-y-4 relative group shadow-sm">
                                                 <button
                                                    onClick={() => {
@@ -593,7 +702,7 @@ export default function ListProductFlow({
                                  <input
                                     className="w-full ml-9 w-[calc(100%-36px)] px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                     placeholder="Add Website Link"
-                                    value={formData.websiteLink}
+                                    value={formData.websiteLink ?? ""}
                                     onChange={e => patchFormData({ websiteLink: e.target.value })}
                                  />
                               </div>
@@ -640,7 +749,7 @@ export default function ListProductFlow({
                               <input
                                  className="w-full px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
                                  placeholder="Enter Product Name"
-                                 value={formData.productTitle}
+                                 value={formData.productTitle ?? ""}
                                  onChange={e => patchFormData({ productTitle: e.target.value })}
                               />
                            </div>
@@ -649,7 +758,7 @@ export default function ListProductFlow({
                               <textarea
                                  className="ml-9 w-[calc(100%-36px)] h-32 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
                                  placeholder="Descriptions"
-                                 value={formData.productDescription}
+                                 value={formData.productDescription ?? ""}
                                  onChange={e => patchFormData({ productDescription: e.target.value })}
                               />
                            </div>
@@ -694,7 +803,7 @@ export default function ListProductFlow({
                                     <input
                                        className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                        placeholder="Enter Price"
-                                       value={formData.price}
+                                       value={formData.price ?? ""}
                                        onChange={e => patchFormData({ price: e.target.value })}
                                     />
                                  </div>
@@ -718,7 +827,7 @@ export default function ListProductFlow({
                                        <input
                                           className="w-full pl-10 pr-5 py-4 bg-white border border-gray-100 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm"
                                           placeholder="Enter Discount Price"
-                                          value={formData.discountPrice}
+                                          value={formData.discountPrice ?? ""}
                                           onChange={e => patchFormData({ discountPrice: e.target.value })}
                                        />
                                     </div>
@@ -831,14 +940,14 @@ export default function ListProductFlow({
                         <input
                            className="flex-1 bg-transparent outline-none text-[14px] font-bold text-gray-900 placeholder:text-gray-300"
                            placeholder="Select Colour"
-                           value={formData.brandColor}
+                           value={formData.brandColor ?? ""}
                            onChange={e => patchFormData({ brandColor: e.target.value })}
                         />
                         <div className="flex items-center gap-2">
                            <input
                               type="color"
                               className="w-12 h-6 border-none cursor-pointer bg-transparent"
-                              value={formData.brandColor}
+                              value={formData.brandColor ?? "#000000"}
                               onChange={e => patchFormData({ brandColor: e.target.value })}
                            />
                            <div
@@ -850,22 +959,22 @@ export default function ListProductFlow({
                   </div>
 
                   <div className="space-y-8 pt-4">
-                     {[
-                        { id: 'darkTheme', title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
-                        { id: 'deactivateSales', title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
-                        { id: 'pageExpiry', title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
-                        { id: 'trackingToggle', title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
-                     ].map((item) => (
+                     {([
+                        { id: 'darkTheme' as const, title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
+                        { id: 'deactivateSales' as const, title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
+                        { id: 'pageExpiry' as const, title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
+                        { id: 'trackingToggle' as const, title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
+                     ] as const).map((item) => (
                         <div key={item.id} className="flex items-center justify-between group">
                            <div className="space-y-1 pr-10">
                               <h3 className="text-[17px] font-black text-gray-900 group-hover:translate-x-1 transition-transform">{item.title}</h3>
                               {item.sub && <p className="text-[13px] font-bold text-gray-400 leading-relaxed max-w-md">{item.sub}</p>}
                            </div>
                            <div
-                              onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
-                              className={`w-14 h-8 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
+                              onClick={() => patchFormData({ [item.id]: !Boolean(formData[item.id]) })}
+                              className={`w-14 h-8 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${formData[item.id] ? 'bg-black' : 'bg-gray-100'}`}
                            >
-                              <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-7' : 'left-1'}`} />
+                              <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-md transition-all ${formData[item.id] ? 'left-7' : 'left-1'}`} />
                            </div>
                         </div>
                      ))}

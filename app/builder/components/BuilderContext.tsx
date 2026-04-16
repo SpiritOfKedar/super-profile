@@ -83,7 +83,7 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
 
         // Persist navigation changes immediately.
         saveBuilderDraft(state);
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- navigation only; full `state` omitted because formData is debounced in the next effect
     }, [isHydrated, isLive, state.flowType, state.step, state.subStep]);
 
     React.useEffect(() => {
@@ -200,7 +200,8 @@ export function BuilderProvider({ children }: { children: React.ReactNode }) {
         setIsLive,
         nextStep,
         prevStep,
-        isHydrated
+        isHydrated,
+        resetBuilder
     ]);
 
     return (

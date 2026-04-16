@@ -81,3 +81,26 @@ export async function uploadToCloudinary(
         stream.end(buffer);
     });
 }
+
+async function deleteByPrefix(prefix: string, resourceType: "image" | "video" | "raw"): Promise<void> {
+    let nextCursor: string | undefined;
+
+    do {
+        const result = await cloudinary.api.delete_resources_by_prefix(prefix, {
+            resource_type: resourceType,
+            type: "upload",
+            next_cursor: nextCursor,
+        });
+        nextCursor = result.next_cursor;
+    } while (nextCursor);
+}
+
+export async function deleteUserCloudinaryAssets(userId: string): Promise<void> {
+    ensureCloudinaryConfigured();
+    const sanitizedUserId = userId.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const prefix = `${BASE_UPLOAD_FOLDER}/users/${sanitizedUserId}/`;
+
+    await deleteByPrefix(prefix, "image");
+    await deleteByPrefix(prefix, "video");
+    await deleteByPrefix(prefix, "raw");
+}

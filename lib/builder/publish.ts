@@ -57,15 +57,39 @@ export function persistListPublish(formData: FormData): PersistPublishResult {
     return { slug, websiteEntry };
 }
 
-export async function syncPublishedWebsiteIndex(formData: FormData, websiteEntry: Website) {
-    const response = await fetch("/api/websites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formData, websiteEntry })
-    });
+export interface SyncIndexResult {
+    synced: boolean;
+    errorMessage?: string;
+    ownerUsername?: string;
+    publicPath?: string;
+}
 
-    if (!response.ok) {
-        const errorPayload = await response.json().catch(() => null);
-        throw new Error(extractApiErrorMessage(errorPayload, "Failed to sync website index."));
+export async function syncPublishedWebsiteIndex(formData: FormData, websiteEntry: Website): Promise<SyncIndexResult> {
+    try {
+        const response = await fetch("/api/websites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ formData, websiteEntry })
+        });
+
+        if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null);
+            return {
+                synced: false,
+                errorMessage: extractApiErrorMessage(errorPayload, "Failed to sync website index."),
+            };
+        }
+
+        const payload = await response.json().catch(() => null);
+        return {
+            synced: true,
+            ownerUsername: payload?.ownerUsername,
+            publicPath: payload?.publicPath,
+        };
+    } catch (error: unknown) {
+        return {
+            synced: false,
+            errorMessage: error instanceof Error ? error.message : "Failed to sync website index.",
+        };
     }
 }

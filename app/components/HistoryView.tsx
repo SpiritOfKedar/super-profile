@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, MoreVertical, List, LayoutGrid, Download, Edit3, ExternalLink, Trash2 } from "lucide-react";
+import { Plus, Search, MoreVertical, List, LayoutGrid, Edit3, ExternalLink, Trash2 } from "lucide-react";
 import { Website } from "@/lib/types";
 import { useState, useMemo, useEffect } from "react";
 
@@ -25,7 +25,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
     }, []);
 
     const filteredWebsites = useMemo(() => {
-        let result = websites.filter(site => {
+        const result = websites.filter(site => {
             const matchesSearch = site.title.toLowerCase().includes(searchQuery.toLowerCase());
             let matchesTab = activeTab === "All";
             if (!matchesTab) {
@@ -41,13 +41,13 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
         // Apply Sorting
         return [...result].sort((a, b) => {
             if (sortBy === "revenue") {
-                const revA = parseInt((a as any).revenue?.replace(/[^\d]/g, '') || '0');
-                const revB = parseInt((b as any).revenue?.replace(/[^\d]/g, '') || '0');
+                const revA = parseInt(a.revenue?.replace(/[^\d]/g, '') || '0');
+                const revB = parseInt(b.revenue?.replace(/[^\d]/g, '') || '0');
                 return revB - revA;
             }
             if (sortBy === "sales") {
-                const saleA = parseInt((a as any).sale || '0');
-                const saleB = parseInt((b as any).sale || '0');
+                const saleA = parseInt(a.sale || '0');
+                const saleB = parseInt(b.sale || '0');
                 return saleB - saleA;
             }
             // Default: Recent (In a real app, use timestamp. Here we use index or a mock lastModified if possible)
@@ -55,8 +55,10 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
         });
     }, [websites, searchQuery, activeTab, sortBy]);
 
+    const hasActiveFilters = searchQuery.trim().length > 0 || activeTab !== "All";
+
     const stats = useMemo(() => {
-        const totalRev = websites.reduce((acc, site) => acc + parseInt((site as any).revenue?.replace(/[^\d]/g, '') || '0'), 0);
+        const totalRev = websites.reduce((acc, site) => acc + parseInt(site.revenue?.replace(/[^\d]/g, '') || '0'), 0);
         return {
             total: websites.length,
             published: websites.filter(s => s.status === "Active" || s.status === "Published").length,
@@ -132,7 +134,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                     <div className="flex bg-white border border-gray-100 rounded-xl p-1 shadow-sm">
                         <select
                             value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value as any)}
+                            onChange={(e) => setSortBy(e.target.value as "recent" | "revenue" | "sales")}
                             className="bg-transparent border-none text-[12px] font-black px-4 outline-none cursor-pointer"
                         >
                             <option value="recent">Recently Edited</option>
@@ -162,8 +164,27 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
 
                     {filteredWebsites.length === 0 ? (
                         <div className="bg-white border border-dashed border-gray-200 rounded-3xl p-20 text-center space-y-3">
-                            <p className="text-gray-400 font-bold">No websites found matching your search.</p>
-                            <button onClick={() => { setSearchQuery(""); setActiveTab("All"); }} className="text-sm font-black text-black underline underline-offset-4">Clear all filters</button>
+                            {hasActiveFilters ? (
+                                <>
+                                    <p className="text-gray-400 font-bold">No websites found matching your search.</p>
+                                    <button
+                                        onClick={() => { setSearchQuery(""); setActiveTab("All"); }}
+                                        className="text-sm font-black text-black underline underline-offset-4"
+                                    >
+                                        Clear all filters
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-gray-400 font-bold">You have not published any websites yet.</p>
+                                    <button
+                                        onClick={onOpenCreateModal}
+                                        className="text-sm font-black text-black underline underline-offset-4"
+                                    >
+                                        Create your first website
+                                    </button>
+                                </>
+                            )}
                         </div>
                     ) : (
                         <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-3"}>
@@ -185,11 +206,11 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                                     <div className="flex items-center gap-4 border-l border-gray-100 ml-3 pl-4">
                                                         <div className="flex flex-col">
                                                             <span className="text-[9px] font-black text-gray-300 uppercase tracking-tighter">Sales</span>
-                                                            <span className="text-[12px] font-black">{(site as any).sale || 0}</span>
+                                                            <span className="text-[12px] font-black">{site.sale || 0}</span>
                                                         </div>
                                                         <div className="flex flex-col">
                                                             <span className="text-[9px] font-black text-gray-300 uppercase tracking-tighter">Revenue</span>
-                                                            <span className="text-[12px] font-black text-green-600">{(site as any).revenue || "₹0"}</span>
+                                                            <span className="text-[12px] font-black text-green-600">{site.revenue || "₹0"}</span>
                                                         </div>
                                                     </div>
                                                 )}
@@ -210,29 +231,31 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setOpenMenuId(openMenuId === ((site as any).slug || i.toString()) ? null : ((site as any).slug || i.toString()));
+                                                    const menuKey = site.slug ?? i.toString();
+                                                    setOpenMenuId(openMenuId === menuKey ? null : menuKey);
                                                 }}
                                                 className="p-1.5 text-gray-300 hover:text-black hover:bg-gray-50 rounded-lg transition-all"
                                             >
                                                 <MoreVertical size={18} />
                                             </button>
 
-                                            {(openMenuId === ((site as any).slug || i.toString())) && (
+                                            {(openMenuId === (site.slug ?? i.toString())) && (
                                                 <div className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-100 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] py-2 z-[60] animate-in fade-in zoom-in-95 duration-200 origin-bottom-right">
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            window.location.href = `/builder/${site.type || 'digital'}?edit=${(site as any).slug || i}`;
+                                                            window.location.href = `/builder/${site.type || 'digital'}?edit=${site.slug ?? i}`;
                                                         }}
                                                         className="w-full px-4 py-2.5 text-left text-[13px] font-black text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                                                     >
                                                         <Edit3 size={14} /> Edit Content
                                                     </button>
-                                                    {(site as any).slug && (
+                                                    {site.slug && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                window.open(`/p/${(site as any).slug}`, '_blank')
+                                                                const livePath = site.publicPath || (site.ownerUsername ? `/u/${site.ownerUsername}/p/${site.slug}` : `/p/${site.slug}`);
+                                                                window.open(livePath, '_blank');
                                                             }}
                                                             className="w-full px-4 py-2.5 text-left text-[13px] font-black text-gray-700 hover:bg-gray-50 flex items-center gap-3"
                                                         >

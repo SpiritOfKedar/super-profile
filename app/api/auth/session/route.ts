@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
         user: {
             id: session.sub,
             name: session.name,
+            username: session.username,
             email: session.email,
         },
     });

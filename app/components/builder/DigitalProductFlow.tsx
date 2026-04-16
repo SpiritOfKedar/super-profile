@@ -1,12 +1,13 @@
 "use client";
 
 import {
-    X, ChevronDown, Check, Laptop, Smartphone, Copy, Globe, Edit3, Palette, Users, ImageIcon,
-    Upload, Bold, Italic, Underline, AlignLeft, MoreHorizontal, HelpCircle, Info, Layout, Store,
-    Instagram, Twitter, Settings, Shield, Mail, Phone, ExternalLink, Eye, RefreshCw, GripVertical, Plus, ArrowRight
+    X, ChevronDown, Check, Laptop, Smartphone, Copy, Edit3, Users, ImageIcon,
+    Upload, HelpCircle, Info, Layout, Store,
+    Instagram, Twitter, Mail, Phone, ExternalLink, RefreshCw, Plus, ArrowRight
 } from "lucide-react";
 import React, { useDeferredValue, useState, useEffect } from "react";
-import { FormData } from "@/lib/types";
+import { FormData, Product } from "@/lib/types";
+import { readStringArrayField } from "@/lib/builder/form-dynamic";
 import DevicePreview from "./DevicePreview";
 import { getErrorMessage, logError } from "@/lib/error-utils";
 import { persistDigitalPublish, syncPublishedWebsiteIndex } from "@/lib/builder/publish";
@@ -30,15 +31,19 @@ export default function DigitalProductFlow({
 }: DigitalProductFlowProps) {
     const [device, setDevice] = useState<"laptop" | "phone">("laptop");
     const [expandedSection, setExpandedSection] = useState<string | null>(null);
-    const [activeStyleTab, setActiveStyleTab] = useState<"Backgrounds" | "Buttons" | "Images">("Backgrounds");
+    const [activeStyleTab, setActiveStyleTab] = useState<"Backgrounds" | "Buttons">("Backgrounds");
     const [isPublishing, setIsPublishing] = useState(false);
-    const [publishingStep, setPublishingStep] = useState(0);
+    const [, setPublishingStep] = useState(0);
+    const [publishWarning, setPublishWarning] = useState<string | null>(null);
     const [tempCoverLink, setTempCoverLink] = useState("");
+    const [tempGalleryLink, setTempGalleryLink] = useState("");
     const [tempTestimonialLink, setTempTestimonialLink] = useState("");
     const [isUploading, setIsUploading] = useState(false);
     const previewFormData = useDeferredValue(formData);
 
     const [currentHost, setCurrentHost] = useState("");
+    const [currentUsername, setCurrentUsername] = useState("");
+    const [publishedPath, setPublishedPath] = useState("");
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -46,8 +51,27 @@ export default function DigitalProductFlow({
         }
     }, []);
 
+    useEffect(() => {
+        fetch("/api/auth/session")
+            .then((res) => res.json())
+            .then((data) => {
+                if (data?.authenticated && data?.user?.username) {
+                    setCurrentUsername(data.user.username);
+                }
+            })
+            .catch(() => undefined);
+    }, []);
+
+    const normalizeImageUrl = (raw: string): string => {
+        const trimmed = raw.trim();
+        if (!trimmed) return "";
+        if (/^https?:\/\//i.test(trimmed)) return trimmed;
+        return `https://${trimmed}`;
+    };
+
     const handlePublish = async () => {
         setIsPublishing(true);
+        setPublishWarning(null);
         const steps = ["Optimizing images...", "Generating SEO tags...", "Configuring custom domain...", "Securing checkout flows...", "Pushing to global CDN..."];
 
         for (let i = 0; i < steps.length; i++) {
@@ -57,13 +81,33 @@ export default function DigitalProductFlow({
 
         const { websiteEntry } = persistDigitalPublish(formData);
 
-        try {
-            await syncPublishedWebsiteIndex(formData, websiteEntry);
-        } catch (err) {
-            logError("digital flow publish sync", err);
+        const syncResult = await syncPublishedWebsiteIndex(formData, websiteEntry);
+        setIsPublishing(false);
+
+        if (!syncResult.synced) {
+            const message = syncResult.errorMessage || "Failed to publish";
+            setPublishWarning(message);
+            alert(`Saved locally, but cloud publish failed: ${message}`);
+            return;
         }
 
-        setIsPublishing(false);
+        const livePath = syncResult.publicPath || `/p/${websiteEntry.slug || formData.customPageUrl || "my-website"}`;
+        setPublishedPath(livePath);
+        if (websiteEntry.slug) {
+            const rawList = localStorage.getItem("websites_list");
+            if (rawList) {
+                const list = JSON.parse(rawList) as Array<{ slug?: string; ownerUsername?: string; publicPath?: string }>;
+                const next = list.map((item) => item.slug === websiteEntry.slug ? { ...item, ownerUsername: syncResult.ownerUsername, publicPath: livePath } : item);
+                localStorage.setItem("websites_list", JSON.stringify(next));
+            }
+            if (syncResult.ownerUsername) {
+                const savedRaw = localStorage.getItem(`website_${websiteEntry.slug}`);
+                if (savedRaw) {
+                    localStorage.setItem(`website_${syncResult.ownerUsername}_${websiteEntry.slug}`, savedRaw);
+                }
+            }
+        }
+
         setIsLive(true);
     };
 
@@ -77,7 +121,7 @@ export default function DigitalProductFlow({
                     uploadKey: field,
                     applyLocal: (localUrl) => {
                         if (isArray) {
-                            const currentArr = (formData as any)[field] || [];
+                            const currentArr = readStringArrayField(formData, field);
                             patchFormData({ [field]: [...currentArr, localUrl] } as Partial<FormData>);
                         } else {
                             patchFormData({ [field]: localUrl } as Partial<FormData>);
@@ -86,7 +130,7 @@ export default function DigitalProductFlow({
                     applyRemote: (remoteUrl, localUrl) => {
                         updateFormData((prev: FormData) => {
                             if (isArray) {
-                                const currentArr = (prev as any)[field] || [];
+                                const currentArr = readStringArrayField(prev, field);
                                 return { ...prev, [field]: currentArr.map((url: string) => url === localUrl ? remoteUrl : url) };
                             }
 
@@ -126,7 +170,7 @@ export default function DigitalProductFlow({
         });
     };
 
-    const updateProduct = (id: string, field: string, value: any) => {
+    const updateProduct = <K extends keyof Product>(id: string, field: K, value: Product[K]) => {
         const newProducts = (formData.products || []).map(p =>
             p.id === id ? { ...p, [field]: value } : p
         );
@@ -170,7 +214,7 @@ export default function DigitalProductFlow({
                     {isUploading ? (
                         <>
                             <RefreshCw className="animate-spin text-blue-500" size={10} />
-                            <span className="text-[10px] font-black uppercase text-blue-500 tracking-wider">Uploading to S3...</span>
+                            <span className="text-[10px] font-black uppercase text-blue-500 tracking-wider">Uploading to Cloudinary...</span>
                         </>
                     ) : (
                         <span className="text-[10px] font-black uppercase text-gray-400">Preview Mode</span>
@@ -181,6 +225,11 @@ export default function DigitalProductFlow({
                     <button onClick={() => setDevice("laptop")} className={`p-2 rounded-lg transition-all ${device === "laptop" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Laptop size={16} /></button>
                     <button onClick={() => setDevice("phone")} className={`p-2 rounded-lg transition-all ${device === "phone" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Smartphone size={16} /></button>
                 </div>
+                {publishWarning && (
+                    <div className="absolute top-20 left-8 right-8 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 z-50">
+                        Cloud publish failed: {publishWarning}
+                    </div>
+                )}
 
                 {(() => {
                     const formData = previewFormData;
@@ -257,7 +306,7 @@ export default function DigitalProductFlow({
                                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center overflow-hidden">
                                             {formData.testimonialImage ? <img src={formData.testimonialImage} className="w-full h-full object-cover" /> : <Users size={24} className="text-gray-300" />}
                                         </div>
-                                        <p className={`font-bold italic leading-relaxed text-[15px] ${formData.themeId === 'tech' || formData.themeId === 'dusk' ? 'text-gray-300' : 'text-gray-600'} break-words whitespace-pre-wrap`}>"{formData.testimonialComment || "No comment yet"}"</p>
+                                        <p className={`font-bold italic leading-relaxed text-[15px] ${formData.themeId === 'tech' || formData.themeId === 'dusk' ? 'text-gray-300' : 'text-gray-600'} break-words whitespace-pre-wrap`}><span className="not-italic">&ldquo;</span>{formData.testimonialComment || "No comment yet"}<span className="not-italic">&rdquo;</span></p>
                                         <p className="font-black text-[14px] break-words">— {formData.testimonialName}</p>
                                     </div>
                                 </div>
@@ -508,6 +557,33 @@ export default function DigitalProductFlow({
                                                             </div>
                                                             <div className="space-y-2">
                                                                 <label className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Gallery Images</label>
+                                                                <div className="flex items-center gap-2">
+                                                                    <input
+                                                                        className="flex-1 px-3 py-2 bg-white border border-gray-100 rounded-xl text-[11px] font-bold outline-none focus:border-black transition-all"
+                                                                        placeholder="Paste image link"
+                                                                        value={tempGalleryLink}
+                                                                        onChange={(e) => setTempGalleryLink(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === "Enter" && tempGalleryLink) {
+                                                                                const existing = formData.galleryImages || [];
+                                                                                patchFormData({ galleryImages: [...existing, tempGalleryLink.trim()] });
+                                                                                setTempGalleryLink("");
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            if (!tempGalleryLink.trim()) return;
+                                                                            const existing = formData.galleryImages || [];
+                                                                            patchFormData({ galleryImages: [...existing, tempGalleryLink.trim()] });
+                                                                            setTempGalleryLink("");
+                                                                        }}
+                                                                        className="px-4 py-2 bg-white border border-gray-100 rounded-full text-[11px] font-black hover:bg-gray-50 transition-all"
+                                                                    >
+                                                                        Add Link
+                                                                    </button>
+                                                                </div>
                                                                 <div className="grid grid-cols-3 gap-2">
                                                                     {formData.galleryImages?.map((img, i) => (
                                                                         <div key={i} className="aspect-square rounded-lg overflow-hidden border border-gray-100 relative group">
@@ -547,13 +623,35 @@ export default function DigitalProductFlow({
                                                                             placeholder="Paste image link"
                                                                             value={tempTestimonialLink}
                                                                             onChange={(e) => setTempTestimonialLink(e.target.value)}
+                                                                            onPaste={(e) => {
+                                                                                const pasted = e.clipboardData.getData("text");
+                                                                                const normalized = normalizeImageUrl(pasted);
+                                                                                if (!normalized) return;
+                                                                                e.preventDefault();
+                                                                                patchFormData({ testimonialImage: normalized });
+                                                                                setTempTestimonialLink("");
+                                                                            }}
                                                                             onKeyDown={(e) => {
-                                                                                if (e.key === 'Enter' && tempTestimonialLink) {
-                                                                                    patchFormData({ testimonialImage: tempTestimonialLink });
+                                                                                if (e.key === 'Enter') {
+                                                                                    const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                                                    if (!normalized) return;
+                                                                                    patchFormData({ testimonialImage: normalized });
                                                                                     setTempTestimonialLink("");
                                                                                 }
                                                                             }}
                                                                         />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const normalized = normalizeImageUrl(tempTestimonialLink);
+                                                                                if (!normalized) return;
+                                                                                patchFormData({ testimonialImage: normalized });
+                                                                                setTempTestimonialLink("");
+                                                                            }}
+                                                                            className="px-3 py-2 bg-white border border-gray-100 rounded-full text-[10px] font-black hover:bg-gray-50 transition-all"
+                                                                        >
+                                                                            Add
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -944,10 +1042,10 @@ export default function DigitalProductFlow({
 
                                 <div className="border border-gray-100 rounded-[28px] overflow-hidden bg-white shadow-sm">
                                     <div className="flex p-1 bg-gray-50 rounded-[24px] m-4">
-                                        {["Backgrounds", "Buttons"].map(tab => (
+                                        {(["Backgrounds", "Buttons"] as const).map((tab) => (
                                             <button
                                                 key={tab}
-                                                onClick={() => setActiveStyleTab(tab as any)}
+                                                onClick={() => setActiveStyleTab(tab)}
                                                 className={`flex-1 py-2.5 rounded-[20px] text-[11px] font-black transition-all ${activeStyleTab === tab ? 'bg-black text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}
                                             >
                                                 {tab}
@@ -1093,11 +1191,11 @@ export default function DigitalProductFlow({
                             <div className="space-y-6 pt-8 border-t border-gray-100">
                                 <h2 className="text-[12px] font-black text-gray-400 uppercase tracking-[0.2em]">Terms and Policies</h2>
                                 <div className="space-y-5">
-                                    {[
-                                        { label: "Terms and Conditions", field: "termsAndConditions" },
-                                        { label: "Refund Policy", field: "refundPolicy" },
-                                        { label: "Privacy Policy", field: "privacyPolicy" }
-                                    ].map(policy => (
+                                    {([
+                                        { label: "Terms and Conditions", field: "termsAndConditions" as const },
+                                        { label: "Refund Policy", field: "refundPolicy" as const },
+                                        { label: "Privacy Policy", field: "privacyPolicy" as const }
+                                    ] as const).map((policy) => (
                                         <div key={policy.field} className="space-y-2.5">
                                             <div className="flex justify-between items-baseline px-1">
                                                 <label className="text-[11px] font-black text-gray-900 uppercase tracking-widest">{policy.label}</label>
@@ -1106,7 +1204,7 @@ export default function DigitalProductFlow({
                                             <textarea
                                                 className="w-full px-5 py-4 bg-gray-50/50 border border-gray-100 rounded-[20px] text-[13px] font-medium outline-none focus:border-black focus:bg-white transition-all shadow-sm resize-none h-[120px]"
                                                 placeholder={`Enter your ${policy.label.toLowerCase()}...`}
-                                                value={(formData as any)[policy.field] || ""}
+                                                value={formData[policy.field] ?? ""}
                                                 onChange={e => patchFormData({ [policy.field]: e.target.value })}
                                             />
                                         </div>
@@ -1126,7 +1224,7 @@ export default function DigitalProductFlow({
                                     </div>
                                 </div>
                                 <div className="flex items-center px-6 py-4 bg-[#F8F9FA] border border-gray-100 rounded-[20px] group focus-within:border-black focus-within:bg-white transition-all shadow-sm">
-                                    <span className="text-[14px] font-black text-gray-400 pr-1 tracking-tight">{currentHost.replace(/^https?:\/\//, '')}/p/</span>
+                                    <span className="text-[14px] font-black text-gray-400 pr-1 tracking-tight">{currentHost.replace(/^https?:\/\//, '')}{currentUsername ? `/u/${currentUsername}/p/` : "/p/"}</span>
                                     <input
                                         className="flex-1 bg-transparent text-[14px] font-bold outline-none text-gray-900 placeholder:text-gray-300"
                                         value={formData.customPageUrl || ""}
@@ -1144,12 +1242,12 @@ export default function DigitalProductFlow({
                                 <h2 className="text-[12px] font-black text-gray-400 uppercase tracking-[0.2em]">Additional Settings</h2>
 
                                 <div className="space-y-6">
-                                    {[
-                                        { id: 'darkTheme', title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
-                                        { id: 'deactivateSales', title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
-                                        { id: 'pageExpiry', title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
-                                        { id: 'trackingToggle', title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
-                                    ].map((item) => (
+                                    {([
+                                        { id: 'darkTheme' as const, title: 'Dark Theme', sub: 'Switch to a premium dark aesthetic for your entire page.' },
+                                        { id: 'deactivateSales' as const, title: 'Deactivate Sales', sub: 'Temporarily stop accepting new orders while keeping the page live.' },
+                                        { id: 'pageExpiry' as const, title: 'Page Expiry', sub: 'Automatically hide the buy buttons after a specific date.' },
+                                        { id: 'trackingToggle' as const, title: 'Advanced Tracking', sub: 'Enable detailed visitor analytics and pixel tracking.' }
+                                    ] as const).map((item) => (
                                         <React.Fragment key={item.id}>
                                             <div className="flex items-center justify-between group">
                                                 <div className="space-y-1.5 pr-8">
@@ -1157,10 +1255,10 @@ export default function DigitalProductFlow({
                                                     {item.sub && <p className="text-[11px] font-bold text-gray-400 leading-relaxed max-w-[320px]">{item.sub}</p>}
                                                 </div>
                                                 <div
-                                                    onClick={() => patchFormData({ [item.id]: !((formData as any)[item.id]) })}
-                                                    className={`w-12 h-7 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${((formData as any)[item.id]) ? 'bg-black' : 'bg-gray-100'}`}
+                                                    onClick={() => patchFormData({ [item.id]: !Boolean(formData[item.id]) })}
+                                                    className={`w-12 h-7 rounded-full transition-all relative cursor-pointer flex-shrink-0 ${formData[item.id] ? 'bg-black' : 'bg-gray-100'}`}
                                                 >
-                                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${((formData as any)[item.id]) ? 'left-6' : 'left-1'}`} />
+                                                    <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-md transition-all ${formData[item.id] ? 'left-6' : 'left-1'}`} />
                                                 </div>
                                             </div>
                                             {item.id === 'pageExpiry' && formData.pageExpiry && (
@@ -1266,11 +1364,11 @@ export default function DigitalProductFlow({
                                 <p className="text-[9px] font-black text-[#94A3B8] uppercase tracking-[0.25em] text-center">Your Website URL</p>
                                 <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-gray-100 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
                                     <div className="flex-1 font-bold text-gray-900 text-[13px] overflow-hidden text-ellipsis whitespace-nowrap text-center">
-                                        {currentHost}/p/{formData.customPageUrl || "my-website"}
+                                        {currentHost}{publishedPath || `/p/${formData.customPageUrl || "my-website"}`}
                                     </div>
                                     <button
                                         onClick={() => {
-                                            navigator.clipboard.writeText(`${currentHost}/p/${formData.customPageUrl || "my-website"}`);
+                                            navigator.clipboard.writeText(`${currentHost}${publishedPath || `/p/${formData.customPageUrl || "my-website"}`}`);
                                         }}
                                         className="p-2 hover:bg-gray-50 rounded-full transition-all text-gray-400 hover:text-black"
                                     >
@@ -1282,7 +1380,7 @@ export default function DigitalProductFlow({
 
                         <div className="flex w-full gap-3">
                             <button
-                                onClick={() => window.open(`/p/${formData.customPageUrl || "my-website"}`, '_blank')}
+                                onClick={() => window.open(publishedPath || `/p/${formData.customPageUrl || "my-website"}`, '_blank')}
                                 className="flex-1 bg-black text-white py-3.5 rounded-full font-black text-[14px] flex items-center justify-center gap-2 transition-all hover:bg-black/95 active:scale-95 shadow-[0_10px_20px_rgba(0,0,0,0.15)]"
                             >
                                 <ExternalLink size={16} strokeWidth={2.5} /> Visit Website

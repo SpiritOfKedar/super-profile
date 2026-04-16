@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
 import { apiError, badRequest, internalServerError } from "@/lib/api-error";
 
+interface CreateOrderPayload {
+    amount?: number | string;
+    currency?: string;
+    receipt?: string;
+}
+
 export async function POST(req: NextRequest) {
     try {
         const keyId = process.env.RAZORPAY_KEY_ID;
@@ -11,10 +17,17 @@ export async function POST(req: NextRequest) {
             return apiError("Razorpay credentials are not configured.", 500, "INTERNAL_ERROR");
         }
 
-        const { amount, currency, receipt } = await req.json();
+        const payload = (await req.json()) as CreateOrderPayload;
+        const amount = Number(payload?.amount);
+        const currency = (payload?.currency || "INR").toUpperCase();
+        const receipt = payload?.receipt?.trim();
 
-        if (!amount || Number.isNaN(Number(amount)) || Number(amount) <= 0) {
+        if (!amount || Number.isNaN(amount) || amount <= 0) {
             return badRequest("Valid amount is required");
+        }
+
+        if (!/^[A-Z]{3}$/.test(currency)) {
+            return badRequest("Currency must be a valid 3-letter ISO code");
         }
 
         const razorpay = new Razorpay({
@@ -23,12 +36,11 @@ export async function POST(req: NextRequest) {
         });
 
         const options = {
-            amount: Math.round(Number(amount) * 100), // amount in the smallest currency unit (paise)
-            currency: currency || "INR",
-            receipt: receipt || "receipt_" + Math.random().toString(36).substring(7),
+            amount: Math.round(amount * 100), // smallest currency unit (paise for INR)
+            currency,
+            receipt: receipt || `receipt_${Date.now()}`,
         };
 
-        console.log("Creating Razorpay Order with options:", options);
         const order = await razorpay.orders.create(options);
 
         return NextResponse.json(order);

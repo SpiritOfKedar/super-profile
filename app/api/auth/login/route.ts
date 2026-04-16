@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { apiError, badRequest, internalServerError } from "@/lib/api-error";
+import { apiError, badRequest, externalServiceError, internalServerError } from "@/lib/api-error";
 import {
     DEFAULT_SESSION_DURATION_SECONDS,
     REMEMBER_ME_SESSION_DURATION_SECONDS,
 } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
 import { signSessionToken } from "@/lib/auth/jwt";
+import { generateOtp, sendEmailOtp, verifyEmailOtp } from "@/lib/auth/email-otp";
+import { isMongoUnavailable } from "@/lib/mongo-errors";
 import { findUserByEmail, normalizeEmail, toPublicUser } from "@/lib/auth/user-store";
 
 interface LoginBody {
     email?: string;
     password?: string;
     rememberMe?: boolean;
+    otp?: string;
 }
 
 function unauthorized(): NextResponse {
@@ -32,6 +35,7 @@ export async function POST(req: NextRequest) {
         const email = body.email?.trim() || "";
         const password = body.password || "";
         const rememberMe = Boolean(body.rememberMe);
+        const otp = body.otp?.trim() || "";
 
         if (!email || !password) {
             return badRequest("Email and password are required");
@@ -47,6 +51,26 @@ export async function POST(req: NextRequest) {
             return unauthorized();
         }
 
+        if (!otp) {
+            try {
+                await sendEmailOtp(user.email, generateOtp());
+                return NextResponse.json(
+                    {
+                        success: false,
+                        requiresOtp: true,
+                        message: "A verification code has been sent to your email.",
+                    },
+                    { status: 202 }
+                );
+            } catch (mailError: unknown) {
+                return externalServiceError("Failed to send OTP email. Please check email configuration.");
+            }
+        }
+
+        if (!verifyEmailOtp(user.email, otp)) {
+            return badRequest("Invalid OTP");
+        }
+
         const maxAge = rememberMe
             ? REMEMBER_ME_SESSION_DURATION_SECONDS
             : DEFAULT_SESSION_DURATION_SECONDS;
@@ -55,6 +79,7 @@ export async function POST(req: NextRequest) {
             userId: user.id,
             email: user.email,
             name: user.name,
+            username: user.username,
             expiresInSeconds: maxAge,
         });
 
@@ -73,6 +98,10 @@ export async function POST(req: NextRequest) {
         const maybeError = error as { message?: string };
         if (maybeError.message === "MONGODB_URI_MISSING") {
             return apiError("MONGODB_URI is missing. Set MONGODB_URI in your environment.", 500, "INTERNAL_ERROR");
+        }
+
+        if (isMongoUnavailable(error)) {
+            return externalServiceError("Database temporarily unavailable. Please try again.");
         }
 
         return internalServerError(error, "api/auth/login POST", "Failed to sign in");

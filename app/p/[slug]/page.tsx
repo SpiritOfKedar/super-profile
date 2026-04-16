@@ -1,19 +1,58 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import Script from "next/script";
-import { FormData, Product } from "@/lib/types";
+import { FormData, Product, Website } from "@/lib/types";
 import { extractApiErrorMessage, getErrorMessage, logError } from "@/lib/error-utils";
 import {
-    Check, X, Plus, HelpCircle, Mail, Phone, Users, Instagram, Twitter, Globe,
-    ArrowRight, Star, ShoppingBag, ShieldCheck, Lock, ChevronDown, RefreshCw,
-    Loader2, Sparkles, Store, Image as ImageIcon
+    Check, X, Mail, Phone, Users, Instagram, Twitter, Globe,
+    ArrowRight, ShoppingBag, ShieldCheck, Lock, RefreshCw,
+    Loader2, Sparkles, Store
 } from "lucide-react";
+
+interface RazorpayPaymentSuccess {
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
+}
+
+interface RazorpayFailurePayload {
+    error?: unknown;
+}
+
+interface RazorpayOptions {
+    key: string;
+    amount: number;
+    currency: string;
+    name: string;
+    description: string;
+    image: string;
+    order_id: string;
+    handler: (response: RazorpayPaymentSuccess) => void | Promise<void>;
+    prefill: { email: string; contact: string };
+    theme: { color: string };
+    modal: { ondismiss: () => void };
+}
+
+interface RazorpayInstance {
+    on(event: "payment.failed", handler: (response: RazorpayFailurePayload) => void): void;
+    open(): void;
+}
+
+type RazorpayConstructor = new (options: RazorpayOptions) => RazorpayInstance;
+
+declare global {
+    interface Window {
+        Razorpay?: RazorpayConstructor;
+    }
+}
 
 export default function PublicProductPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const slug = params.slug as string;
+    const username = searchParams.get("u") || "";
     const [formData, setFormData] = useState<FormData | null>(null);
     const [loading, setLoading] = useState(true);
     const [showCheckout, setShowCheckout] = useState(false);
@@ -32,13 +71,18 @@ export default function PublicProductPage() {
     const [showEmailOtp, setShowEmailOtp] = useState(false);
     const [showPhoneOtp, setShowPhoneOtp] = useState(false);
     const [customAmount, setCustomAmount] = useState("");
+    const [policyModal, setPolicyModal] = useState<{
+        title: "Terms" | "Privacy" | "Refunds";
+        content: string;
+    } | null>(null);
 
     useEffect(() => {
         const fetchConfig = async () => {
             setLoading(true);
             try {
                 // 1. Try fetching from Cloud Index (S3) - This makes the site truly public
-                const response = await fetch(`/api/websites?slug=${slug}`);
+                const query = username ? `?slug=${slug}&username=${encodeURIComponent(username)}` : `?slug=${slug}`;
+                const response = await fetch(`/api/websites${query}`);
                 if (response.ok) {
                     const cloudData = await response.json();
                     setFormData(cloudData);
@@ -49,7 +93,8 @@ export default function PublicProductPage() {
             }
 
             // 2. Fallback to Local Storage (for draft previews or offline mode)
-            const localData = localStorage.getItem(`website_${slug}`);
+            const localKey = username ? `website_${username}_${slug}` : `website_${slug}`;
+            const localData = localStorage.getItem(localKey);
             if (localData) {
                 try {
                     setFormData(JSON.parse(localData));
@@ -61,7 +106,7 @@ export default function PublicProductPage() {
         };
 
         fetchConfig().finally(() => setLoading(false));
-    }, [slug]);
+    }, [slug, username]);
 
     // Expiry Check Hook
     const [isExpired, setIsExpired] = useState(false);
@@ -105,7 +150,7 @@ export default function PublicProductPage() {
                 <X className="text-red-500" size={32} />
             </div>
             <h1 className="text-2xl font-black text-gray-900 mb-2">Website Not Found</h1>
-            <p className="text-gray-500 font-medium">This page hasn't been published yet or the link is incorrect.</p>
+            <p className="text-gray-500 font-medium">This page has not been published yet or the link is incorrect.</p>
         </div>
     );
 
@@ -311,22 +356,45 @@ export default function PublicProductPage() {
             }
 
             // 2. Open Razorpay Checkout
-            if (!(window as any).Razorpay) {
+            const Razorpay = window.Razorpay;
+            if (!Razorpay) {
                 alert("Razorpay SDK not loaded. Please check your connection or disable adblockers.");
                 return;
             }
 
-            const options = {
-                key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "rzp_live_S2chnbRxpJ0zJI",
+            const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+            if (!razorpayKey) {
+                alert("Payment key is missing. Please configure NEXT_PUBLIC_RAZORPAY_KEY_ID.");
+                return;
+            }
+
+            const options: RazorpayOptions = {
+                key: razorpayKey,
                 amount: order.amount, // Use amount from the created order (already in paise)
                 currency: order.currency,
                 name: formData?.title || "SuperProfile",
                 description: "Purchase for " + (selectedProduct?.title || formData?.title),
                 image: formData?.coverImage || "",
                 order_id: order.id,
-                handler: function (response: any) {
-                    // Payment successful
-                    console.log("Payment Successful:", response);
+                handler: async function (response: RazorpayPaymentSuccess) {
+                    try {
+                        const verifyRes = await fetch("/api/razorpay/verify", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(response),
+                        });
+                        const verifyData = await verifyRes.json().catch(() => null);
+                        if (!verifyRes.ok || !verifyData?.verified) {
+                            const verifyError = extractApiErrorMessage(verifyData, "Payment verification failed");
+                            alert(`Payment verification failed: ${verifyError}`);
+                            return;
+                        }
+                    } catch (verifyErr) {
+                        logError("public page verify payment", verifyErr);
+                        alert("Payment verification failed. Please contact support if amount was deducted.");
+                        return;
+                    }
+
                     completeCheckout();
                 },
                 prefill: {
@@ -343,8 +411,8 @@ export default function PublicProductPage() {
                 }
             };
 
-            const rzp = new (window as any).Razorpay(options);
-            rzp.on('payment.failed', function (response: any) {
+            const rzp = new Razorpay(options);
+            rzp.on("payment.failed", function (response: RazorpayFailurePayload) {
                 const failureMessage = extractApiErrorMessage(response?.error, "Payment failed");
                 alert("Payment Failed: " + failureMessage);
             });
@@ -369,8 +437,8 @@ export default function PublicProductPage() {
         // Update websites_list in localStorage
         const rawList = localStorage.getItem('websites_list');
         if (rawList) {
-            const list = JSON.parse(rawList);
-            const index = list.findIndex((s: any) => s.slug === slug);
+            const list = JSON.parse(rawList) as Website[];
+            const index = list.findIndex((s) => s.slug === slug);
             if (index !== -1) {
                 const site = list[index];
                 const currentRev = parseInt(site.revenue?.replace(/[^\d]/g, '') || '0');
@@ -382,6 +450,21 @@ export default function PublicProductPage() {
                 localStorage.setItem('websites_list', JSON.stringify(list));
             }
         }
+    };
+
+    const openPolicyModal = (policy: "Terms" | "Privacy" | "Refunds") => {
+        if (!formData) return;
+        const content =
+            policy === "Terms"
+                ? formData.termsAndConditions
+                : policy === "Privacy"
+                    ? formData.privacyPolicy
+                    : formData.refundPolicy;
+
+        setPolicyModal({
+            title: policy,
+            content: (content || "Not specified.").trim(),
+        });
     };
 
     return (
@@ -436,10 +519,10 @@ export default function PublicProductPage() {
                         )}
                     </div>
 
-                    {formData.digitalFilesImage || formData.coverImage ? (
+                    {formData.coverImage || formData.digitalFilesImage ? (
                         <div className={`w-full aspect-video rounded-[64px] overflow-hidden shadow-[0_80px_160px_-40px_rgba(0,0,0,0.4)] border ${style.border} relative group mt-8 p-1 bg-white/5`}>
                             <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent z-10 pointer-events-none" />
-                            <img src={formData.digitalFilesImage || formData.coverImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 rounded-[60px]" alt="Cover" />
+                            <img src={formData.coverImage || formData.digitalFilesImage} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 rounded-[60px]" alt="Cover" />
                         </div>
                     ) : null}
                 </header>
@@ -454,7 +537,7 @@ export default function PublicProductPage() {
 
                     {formData.products && formData.products.filter(p => p.title || p.price).length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                            {formData.products.filter(p => p.title || p.price).map((product, idx) => (
+                            {formData.products.filter(p => p.title || p.price).map((product) => (
                                 <div key={product.id} className={`group p-8 md:p-10 rounded-[64px] border ${style.border} ${style.card} shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] hover:shadow-[0_64px_128px_-32px_rgba(0,0,0,0.2)] transition-all duration-700 hover:-translate-y-3 relative overflow-hidden flex flex-col`}>
                                     <div className={`absolute -top-20 -right-20 w-80 h-80 bg-gradient-to-br ${style.gradient} opacity-20 blur-3xl pointer-events-none`} />
                                     <div className="flex flex-col gap-8 relative z-10 flex-1">
@@ -497,7 +580,7 @@ export default function PublicProductPage() {
                             <div className={`absolute -bottom-24 -left-24 w-[500px] h-[500px] bg-gradient-to-tr ${style.gradient} opacity-20 blur-[120px] pointer-events-none group-hover:opacity-40 transition-opacity duration-1000`} />
                             <div className="flex flex-col gap-12 relative z-10 w-full items-center">
                                 <div className="w-full max-w-md aspect-square rounded-[56px] overflow-hidden border border-white/10 shadow-3xl relative shrink-0">
-                                    <img src={formData.digitalFilesImage || formData.coverImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+                                    <img src={formData.coverImage || formData.digitalFilesImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                 </div>
                                 <div className="flex flex-col items-center space-y-8 w-full">
@@ -606,7 +689,9 @@ export default function PublicProductPage() {
                                 </div>
                                 <div className="space-y-6 max-w-3xl">
                                     <p className="text-2xl md:text-4xl font-black italic leading-[1.2] tracking-tight">
-                                        "{formData.testimonialComment || "Absolutely life-changing experience. Highly recommended for anyone looking to scale their digital presence!"}"
+                                        <span className="not-italic">&ldquo;</span>
+                                        {formData.testimonialComment || "Absolutely life-changing experience. Highly recommended for anyone looking to scale their digital presence!"}
+                                        <span className="not-italic">&rdquo;</span>
                                     </p>
                                     <div className="space-y-1">
                                         <h4 className="text-xl font-black uppercase tracking-widest">{formData.testimonialName}</h4>
@@ -641,10 +726,7 @@ export default function PublicProductPage() {
                             {["Terms", "Privacy", "Refunds"].map((policy) => (
                                 <button
                                     key={policy}
-                                    onClick={() => {
-                                        const content = policy === "Terms" ? formData.termsAndConditions : policy === "Privacy" ? formData.privacyPolicy : formData.refundPolicy;
-                                        alert(`${policy}\n\n${content || "Not specified."}`);
-                                    }}
+                                    onClick={() => openPolicyModal(policy as "Terms" | "Privacy" | "Refunds")}
                                     className="text-[11px] font-black uppercase tracking-[0.4em] opacity-30 hover:opacity-100 transition-opacity flex items-center gap-2 group"
                                 >
                                     <span className="w-1.5 h-1.5 rounded-full bg-current opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -666,6 +748,38 @@ export default function PublicProductPage() {
                     </div>
                 </footer>
             </div>
+
+            {/* Policy Content Modal */}
+            {policyModal && (
+                <div className="fixed inset-0 z-[95] flex items-center justify-center px-4 py-8 animate-in fade-in duration-300">
+                    <button
+                        type="button"
+                        aria-label="Close policy modal"
+                        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+                        onClick={() => setPolicyModal(null)}
+                    />
+                    <div className="relative w-full max-w-3xl max-h-[85vh] rounded-[32px] bg-white shadow-[0_40px_120px_-24px_rgba(0,0,0,0.45)] border border-gray-100 overflow-hidden">
+                        <div className="flex items-center justify-between px-8 py-6 border-b border-gray-100">
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.35em]">Policy</p>
+                                <h3 className="text-2xl font-black text-gray-900">{policyModal.title}</h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setPolicyModal(null)}
+                                className="p-3 rounded-full hover:bg-gray-100 transition-colors"
+                            >
+                                <X size={20} className="text-gray-500" />
+                            </button>
+                        </div>
+                        <div className="px-8 py-6 overflow-y-auto max-h-[calc(85vh-96px)]">
+                            <p className="text-[15px] leading-relaxed text-gray-700 whitespace-pre-wrap">
+                                {policyModal.content}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Premium Checkout Modal */}
             {showCheckout && (
