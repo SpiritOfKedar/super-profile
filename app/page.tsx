@@ -187,12 +187,12 @@ export default function App() {
 
     return (
         <div className="min-h-screen bg-white">
-            <div className="fixed right-4 top-4 z-50">
-                <div className="flex items-center gap-2">
+            <div className="fixed inset-x-3 top-3 z-50 sm:inset-x-auto sm:right-4 sm:top-4">
+                <div className="flex items-center justify-end gap-2">
                     <button
                         type="button"
                         onClick={() => setIsSettingsOpen(true)}
-                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-black shadow-lg transition-colors hover:bg-gray-100"
+                        className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-black shadow-lg transition-colors hover:bg-gray-100 sm:px-5 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]"
                     >
                         Settings
                     </button>
@@ -200,7 +200,7 @@ export default function App() {
                         type="button"
                         onClick={handleLogout}
                         disabled={isLoggingOut}
-                        className="inline-flex items-center gap-2 rounded-full bg-black px-5 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-lg shadow-black/20 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center gap-2 rounded-full bg-black px-4 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white shadow-lg shadow-black/20 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60 sm:px-5 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]"
                     >
                         <LogOut size={14} />
                         {isLoggingOut ? "Logging Out..." : "Logout"}
