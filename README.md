@@ -10,6 +10,19 @@ This app is a single Next.js service (UI + API routes together). MongoDB stays o
 - Valid MongoDB Atlas connection string in `.env` (`MONGODB_URI`)
 - Required app secrets set in `.env` (`AUTH_SECRET`, Cloudinary keys, etc.)
 
+### Google OAuth setup
+
+To enable `Continue with Google`, set these variables in `.env`:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI` (recommended for production)
+
+Use this redirect URI in Google Cloud Console:
+
+- `http://localhost:3000/api/auth/google/callback` for local development
+- `https://<your-domain>/api/auth/google/callback` for production
+
 ### Run with Docker Compose
 
 ```bash

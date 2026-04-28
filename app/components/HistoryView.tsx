@@ -16,10 +16,21 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
     const [viewMode, setViewMode] = useState<"list" | "grid">("list");
     const [sortBy, setSortBy] = useState<"recent" | "revenue" | "sales">("recent");
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [isMobileSortOpen, setIsMobileSortOpen] = useState(false);
+
+    const sortOptions: Array<{ value: "recent" | "revenue" | "sales"; label: string }> = [
+        { value: "recent", label: "Recently Edited" },
+        { value: "revenue", label: "Highest Revenue" },
+        { value: "sales", label: "Most Sales" }
+    ];
+    const selectedSortLabel = sortOptions.find((option) => option.value === sortBy)?.label ?? "Recently Edited";
 
     // Close menu on click outside
     useEffect(() => {
-        const handleClick = () => setOpenMenuId(null);
+        const handleClick = () => {
+            setOpenMenuId(null);
+            setIsMobileSortOpen(false);
+        };
         window.addEventListener('click', handleClick);
         return () => window.removeEventListener('click', handleClick);
     }, []);
@@ -69,24 +80,24 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
     }, [websites]);
 
     return (
-        <div className="min-h-screen bg-[#F9FAFB] text-[#111827]">
+        <div className="min-h-screen overflow-x-hidden bg-[#F9FAFB] text-[#111827]">
             {/* Hero Banner Section */}
-            <div className="relative h-64 w-full overflow-hidden">
+            <div className="relative h-44 w-full overflow-hidden sm:h-52 md:h-64">
                 <img
                     src="/topimage.png"
                     alt="banner"
                     className="w-full h-full object-cover"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
-                    <h1 className="text-white text-[56px] font-black tracking-tighter drop-shadow-2xl">Website</h1>
+                    <h1 className="text-white text-[36px] font-black tracking-tighter drop-shadow-2xl sm:text-[44px] md:text-[56px]">Website</h1>
                 </div>
             </div>
 
-            <div className="max-w-6xl mx-auto px-6 -mt-8 relative z-10 space-y-6">
+            <div className="relative z-10 mx-auto -mt-6 max-w-6xl space-y-4 px-3 sm:-mt-8 sm:space-y-6 sm:px-4 md:px-6">
                 {/* Stats / Controls */}
-                <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                    <div className="flex items-center gap-6">
-                        <div className="flex gap-2 border-r border-gray-100 pr-6">
+                <div className="flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm sm:p-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-6">
+                        <div className="-mx-1 flex gap-2 overflow-x-auto pb-1 md:mx-0 md:overflow-visible md:border-r md:border-gray-100 md:pr-6">
                             {[
                                 { name: "All", count: stats.total },
                                 { name: "Active", label: "Published", count: stats.published },
@@ -98,7 +109,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                     <button
                                         key={tab.name}
                                         onClick={() => setActiveTab(tab.name)}
-                                        className={`px-5 py-2 rounded-full text-[12px] font-black border transition-all ${isActive ? "bg-black text-white border-black" : "bg-white text-gray-400 border-gray-100 hover:border-gray-300"}`}
+                                        className={`shrink-0 rounded-full border px-4 py-2 text-[11px] font-black transition-all sm:px-5 sm:text-[12px] ${isActive ? "border-black bg-black text-white" : "border-gray-100 bg-white text-gray-400 hover:border-gray-300"}`}
                                     >
                                         {tab.label || tab.name} ({tab.count})
                                     </button>
@@ -107,12 +118,12 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                         </div>
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Revenue</span>
-                            <span className="text-[18px] font-black text-green-600">{stats.revenue}</span>
+                            <span className="text-[16px] font-black text-green-600 sm:text-[18px]">{stats.revenue}</span>
                         </div>
                     </div>
                     <button
                         onClick={onOpenCreateModal}
-                        className="bg-black text-white px-5 py-2 rounded-full flex items-center gap-2 text-[12px] font-bold transition-transform active:scale-95 shadow-lg"
+                        className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-5 py-2 text-[12px] font-bold text-white shadow-lg transition-transform active:scale-95 md:w-auto"
                     >
                         <Plus size={16} strokeWidth={3} />
                         Create New
@@ -120,7 +131,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                 </div>
 
                 {/* Search & Utility */}
-                <div className="flex gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row">
                     <div className="relative flex-1">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={16} />
                         <input
@@ -131,18 +142,53 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                             className="w-full pl-11 pr-4 py-3 bg-white border border-gray-100 rounded-xl text-[13px] outline-none focus:border-black transition-colors shadow-sm"
                         />
                     </div>
-                    <div className="flex bg-white border border-gray-100 rounded-xl p-1 shadow-sm">
+                    <div className="relative sm:hidden">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setIsMobileSortOpen((prev) => !prev);
+                            }}
+                            className="flex w-full items-center justify-between rounded-xl border border-gray-100 bg-white px-3 py-2.5 text-left text-[12px] font-black text-gray-700 shadow-sm"
+                        >
+                            <span>{selectedSortLabel}</span>
+                            <span className={`text-[11px] transition-transform ${isMobileSortOpen ? "rotate-180" : ""}`}>⌄</span>
+                        </button>
+                        {isMobileSortOpen && (
+                            <div
+                                className="absolute left-0 right-0 top-full z-40 mt-1 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {sortOptions.map((option) => (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => {
+                                            setSortBy(option.value);
+                                            setIsMobileSortOpen(false);
+                                        }}
+                                        className={`w-full px-3 py-2.5 text-left text-[12px] font-black ${sortBy === option.value ? "bg-black text-white" : "text-gray-700 hover:bg-gray-50"}`}
+                                    >
+                                        {option.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <div className="hidden rounded-xl border border-gray-100 bg-white p-1 shadow-sm sm:flex">
                         <select
                             value={sortBy}
                             onChange={(e) => setSortBy(e.target.value as "recent" | "revenue" | "sales")}
-                            className="bg-transparent border-none text-[12px] font-black px-4 outline-none cursor-pointer"
+                            className="w-full cursor-pointer border-none bg-transparent px-3 text-[12px] font-black outline-none sm:w-auto sm:px-4"
                         >
-                            <option value="recent">Recently Edited</option>
-                            <option value="revenue">Highest Revenue</option>
-                            <option value="sales">Most Sales</option>
+                            {sortOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
                         </select>
                     </div>
-                    <div className="flex bg-white border border-gray-100 rounded-xl p-1 shadow-sm">
+                    <div className="hidden rounded-xl border border-gray-100 bg-white p-1 shadow-sm sm:flex">
                         <button
                             onClick={() => setViewMode("list")}
                             className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-gray-50 text-black shadow-inner" : "text-gray-300 hover:text-gray-500"}`}
@@ -159,7 +205,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                 </div>
 
                 {/* History List */}
-                <div className="space-y-4 pb-20">
+                <div className="space-y-4 pb-12 sm:pb-20">
                     <h3 className="text-[14px] font-black text-gray-400 uppercase tracking-widest px-1">Recent Activity</h3>
 
                     {filteredWebsites.length === 0 ? (
@@ -187,10 +233,10 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                             )}
                         </div>
                     ) : (
-                        <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-3"}>
+                        <div className={viewMode === "grid" ? "grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2 lg:grid-cols-3" : "space-y-3"}>
                             {filteredWebsites.map((site, i) => (
-                                <div key={i} className={`group bg-white border border-gray-100 rounded-2xl hover:border-black/10 hover:shadow-xl transition-all cursor-pointer ${viewMode === "grid" ? "flex flex-col p-0 overflow-hidden" : "flex items-center justify-between p-4"}`}>
-                                    <div className={`flex items-center gap-4 ${viewMode === "grid" ? "flex-col items-start gap-0 w-full" : ""}`}>
+                                <div key={i} className={`group cursor-pointer rounded-2xl border border-gray-100 bg-white transition-all hover:border-black/10 hover:shadow-xl ${viewMode === "grid" ? "flex flex-col overflow-hidden p-0" : "flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4"}`}>
+                                    <div className={`flex items-center gap-3 sm:gap-4 ${viewMode === "grid" ? "w-full flex-col items-start gap-0" : ""}`}>
                                         <div className={`${viewMode === "grid" ? "w-full aspect-[16/10] rounded-none border-b" : "w-12 h-12 rounded-xl"} bg-gray-50 overflow-hidden border border-gray-50 shadow-inner`}>
                                             <img
                                                 src={site.image}
@@ -198,12 +244,12 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                                 alt={site.title}
                                             />
                                         </div>
-                                        <div className={`space-y-0.5 ${viewMode === "grid" ? "p-5" : ""}`}>
+                                        <div className={`min-w-0 space-y-0.5 ${viewMode === "grid" ? "p-5" : ""}`}>
                                             <h4 className="text-[15px] font-bold text-gray-900 leading-tight group-hover:text-blue-600 transition-colors">{site.title}</h4>
-                                            <div className="flex items-center gap-3">
+                                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                                                 <p className="text-[11px] text-gray-400 font-medium tracking-tight">Edited {site.lastModified || "Just now"}</p>
                                                 {viewMode === "list" && (
-                                                    <div className="flex items-center gap-4 border-l border-gray-100 ml-3 pl-4">
+                                                    <div className="ml-0 flex items-center gap-4 border-l border-gray-100 pl-3 sm:ml-3 sm:pl-4">
                                                         <div className="flex flex-col">
                                                             <span className="text-[9px] font-black text-gray-300 uppercase tracking-tighter">Sales</span>
                                                             <span className="text-[12px] font-black">{site.sale || 0}</span>
@@ -218,7 +264,7 @@ export default function HistoryView({ websites, onOpenCreateModal, onDelete }: H
                                         </div>
                                     </div>
 
-                                    <div className={`flex items-center gap-5 ${viewMode === "grid" ? "px-5 pb-5 pt-0 border-t-0 mt-auto justify-between w-full" : "relative"}`}>
+                                    <div className={`flex items-center justify-between gap-3 ${viewMode === "grid" ? "mt-auto w-full justify-between border-t-0 px-5 pb-5 pt-0" : "relative sm:justify-end sm:gap-5"}`}>
                                         <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider border ${site.status === 'Active' || site.status === 'Published'
                                             ? 'bg-green-50 text-green-600 border-green-100'
                                             : site.status === 'Draft'

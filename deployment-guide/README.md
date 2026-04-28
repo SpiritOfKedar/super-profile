@@ -17,7 +17,13 @@ Follow these files in order:
 
 ## Environment Variables
 
-See [`.env.template`](.env.template) for the environment variables format you need to create on your EC2 instance.
+Use the root [`.env.example`](../.env.example) as the source of truth when creating your production `.env` file.
+
+Google OAuth requires:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI` (recommended to avoid proxy/host mismatch issues)
 
 ## Tech Stack
 
@@ -25,7 +31,7 @@ See [`.env.template`](.env.template) for the environment variables format you ne
 - **Runtime**: Node.js 20.x
 - **Process Manager**: PM2
 - **Web Server**: Nginx
-- **Services**: AWS S3, Razorpay, Nodemailer
+- **Services**: MongoDB Atlas, Google OAuth, Razorpay, Nodemailer, Cloudinary
 
 ## Estimated Time
 

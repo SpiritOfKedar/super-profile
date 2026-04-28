@@ -207,10 +207,10 @@ export default function DigitalProductFlow({
     };
 
     return (
-        <div className="flex h-screen bg-[#F8F9FA] text-[#1A1A1A] overflow-hidden font-sans">
+        <div className="flex min-h-screen flex-col overflow-x-hidden bg-[#F8F9FA] font-sans text-[#1A1A1A] lg:h-screen lg:flex-row lg:overflow-hidden">
             {/* Main Preview Area */}
-            <div className={`flex-1 flex flex-col items-center justify-center p-12 bg-gray-100/50 relative ${isUploading ? 'cursor-wait' : ''}`}>
-                <div className="absolute top-8 left-8 flex items-center gap-2 bg-white/80 backdrop-blur px-3 py-1.5 rounded-xl border border-white shadow-sm z-50">
+            <div className={`relative hidden flex-1 flex-col items-center justify-center bg-gray-100/50 p-12 lg:flex ${isUploading ? 'cursor-wait' : ''}`}>
+                <div className="absolute left-8 top-8 z-50 flex items-center gap-2 rounded-xl border border-white bg-white/80 px-3 py-1.5 shadow-sm backdrop-blur">
                     {isUploading ? (
                         <>
                             <RefreshCw className="animate-spin text-blue-500" size={10} />
@@ -221,12 +221,12 @@ export default function DigitalProductFlow({
                     )}
                 </div>
 
-                <div className="absolute top-8 right-8 flex bg-white rounded-xl shadow-sm p-1 border border-gray-100 z-10">
+                <div className="absolute right-8 top-8 z-10 flex rounded-xl border border-gray-100 bg-white p-1 shadow-sm">
                     <button onClick={() => setDevice("laptop")} className={`p-2 rounded-lg transition-all ${device === "laptop" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Laptop size={16} /></button>
                     <button onClick={() => setDevice("phone")} className={`p-2 rounded-lg transition-all ${device === "phone" ? "bg-gray-100 text-black shadow-inner" : "text-gray-400"}`}><Smartphone size={16} /></button>
                 </div>
                 {publishWarning && (
-                    <div className="absolute top-20 left-8 right-8 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700 z-50">
+                    <div className="absolute left-8 right-8 top-20 z-50 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-700">
                         Cloud publish failed: {publishWarning}
                     </div>
                 )}
@@ -401,25 +401,25 @@ export default function DigitalProductFlow({
             </div>
 
             {/* Sidebar Form */}
-            <div className="w-[580px] bg-white border-l border-gray-100 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-20">
-                <header className="px-10 py-6 border-b border-gray-50 flex items-center justify-between">
+            <div className="z-20 flex w-full flex-col bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.02)] lg:w-[580px] lg:border-l lg:border-gray-100">
+                <header className="flex items-center justify-between border-b border-gray-50 px-3 py-4 sm:px-6 sm:py-5 lg:px-10 lg:py-6">
                     <div className="flex items-center gap-4">
                         <X size={20} className="text-gray-400 cursor-pointer hover:text-black transition-colors" onClick={onCancel} />
                         <span className="text-[13px] font-bold text-gray-900">New Page</span>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-3 sm:gap-6">
                         <div className="flex gap-1.5 items-center">
                             <div className="flex gap-1">
                                 {[1, 2, 3].map(i => (
                                     <div key={i} className={`w-1.5 h-1.5 rounded-full ${step >= i ? "bg-black" : "bg-gray-200"}`} />
                                 ))}
                             </div>
-                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-2">Step {step} - {step === 1 ? "Step Details" : step === 2 ? "Payment Page" : "Advanced Settings"}</span>
+                            <span className="ml-2 hidden text-[10px] font-black uppercase tracking-widest text-gray-400 sm:block">Step {step} - {step === 1 ? "Step Details" : step === 2 ? "Payment Page" : "Advanced Settings"}</span>
                         </div>
                     </div>
                 </header>
 
-                <div className="flex-1 overflow-y-auto px-10 py-10 space-y-10 scrollbar-hide">
+                <div className="scrollbar-hide flex-1 space-y-8 overflow-y-auto px-3 py-5 sm:px-6 sm:py-8 lg:space-y-10 lg:px-10 lg:py-10">
                     {step === 1 && (
                         <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
                             <h1 className="text-[26px] font-black tracking-tight text-gray-900">Tell us about your Website Page</h1>
@@ -557,7 +557,7 @@ export default function DigitalProductFlow({
                                                             </div>
                                                             <div className="space-y-2">
                                                                 <label className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Gallery Images</label>
-                                                                <div className="flex items-center gap-2">
+                                                                <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
                                                                     <input
                                                                         className="flex-1 px-3 py-2 bg-white border border-gray-100 rounded-xl text-[11px] font-bold outline-none focus:border-black transition-all"
                                                                         placeholder="Paste image link"
@@ -760,7 +760,7 @@ export default function DigitalProductFlow({
                                                                                 />
                                                                             </div>
 
-                                                                            <div className="grid grid-cols-2 gap-4">
+                                                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                                                                                 <div className="space-y-1.5">
                                                                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Price (₹)</label>
                                                                                     <input
@@ -934,7 +934,7 @@ export default function DigitalProductFlow({
                                     </div>
 
                                     {formData.pricingType === "fixed" && (
-                                        <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-top-2 duration-300">
+                                        <div className="grid grid-cols-1 gap-4 animate-in slide-in-from-top-2 duration-300 sm:grid-cols-2">
                                             <div className="space-y-2">
                                                 <label className="text-[10px] font-black text-gray-900 uppercase tracking-widest">Price *</label>
                                                 <div className="relative">
@@ -1311,7 +1311,7 @@ export default function DigitalProductFlow({
                     )}
                 </div>
 
-                <footer className="px-10 py-8 border-t border-gray-50 flex items-center gap-4">
+                <footer className="sticky bottom-0 flex items-center gap-3 border-t border-gray-50 bg-white/95 px-3 py-4 backdrop-blur-sm sm:gap-4 sm:px-6 sm:py-6 lg:px-10 lg:py-8">
                     <button
                         onClick={onBack}
                         className={`flex-1 py-4 border border-gray-200 rounded-2xl text-[14px] font-black text-gray-900 hover:bg-gray-50 transition-all ${step === 1 ? 'invisible' : ''}`}

@@ -255,14 +255,15 @@ export default function ListProductFlow({
    };
 
    return (
-      <div className="min-h-screen bg-[#FDFDFD] text-[#1A1A1A] font-sans">
+      <div className="min-h-screen overflow-x-hidden bg-[#FDFDFD] text-[#1A1A1A] font-sans">
          {/* Header */}
-         <header className="fixed top-0 left-0 right-0 h-20 bg-white border-b border-gray-100 flex items-center justify-between px-10 z-50">
-            <div className="flex items-center gap-4">
+         <header className="fixed left-0 right-0 top-0 z-50 h-16 border-b border-gray-100 bg-white px-3 sm:h-20 sm:px-6 lg:px-10">
+            <div className="flex h-full items-center justify-between gap-3">
+            <div className="flex items-center gap-2 sm:gap-4">
                <span className="text-[14px] font-black text-gray-900">New Page</span>
             </div>
-            <div className="flex items-center gap-6">
-               <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2 sm:gap-4 lg:gap-6">
+               <div className="hidden items-center gap-1.5 sm:flex">
                   <div className="flex gap-1">
                      {[1, 2, 3].map(i => (
                         <div key={i} className={`w-1.5 h-1.5 rounded-full ${step === i ? "bg-black" : "bg-gray-200"}`} />
@@ -270,19 +271,20 @@ export default function ListProductFlow({
                   </div>
                   <span className="text-[12px] font-black text-gray-900 ml-2">Step {step} - {step === 1 ? "Page" : step === 2 ? "Checkout" : "Settings"}</span>
                </div>
-               <button onClick={handlePublish} className="bg-black text-white px-6 py-2.5 rounded-full text-[13px] font-bold hover:bg-gray-800 transition-all">
+               <button onClick={handlePublish} className="rounded-full bg-black px-3 py-2 text-[11px] font-bold text-white transition-all hover:bg-gray-800 sm:px-6 sm:py-2.5 sm:text-[13px]">
                   Publish page
                </button>
                <button onClick={onCancel} className="p-2 hover:bg-gray-50 rounded-full transition-all">
                   <X size={20} className="text-gray-400" />
                </button>
             </div>
+            </div>
             {isUploading && (
                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-blue-500 animate-pulse" />
             )}
          </header>
 
-         <main className="pt-32 pb-40 px-6 max-w-4xl mx-auto flex flex-col items-center">
+         <main className="mx-auto flex max-w-4xl flex-col items-center px-3 pb-36 pt-20 sm:px-4 sm:pb-40 sm:pt-28 lg:px-6">
             {publishWarning && (
                <div className="w-full mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
                   Cloud publish failed: {publishWarning}
@@ -698,9 +700,9 @@ export default function ListProductFlow({
 
                            {formData.paymentPageFor === 'link' ? (
                               <div className="space-y-3">
-                                 <label className="text-[13px] font-black text-gray-900 ml-9">URL</label>
+                                 <label className="text-[13px] font-black text-gray-900 sm:ml-9">URL</label>
                                  <input
-                                    className="w-full ml-9 w-[calc(100%-36px)] px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black transition-all shadow-sm"
+                                    className="w-full rounded-xl border border-gray-200 bg-white px-5 py-4 text-[14px] font-bold outline-none shadow-sm transition-all focus:border-black sm:ml-9 sm:w-[calc(100%-36px)]"
                                     placeholder="Add Website Link"
                                     value={formData.websiteLink ?? ""}
                                     onChange={e => patchFormData({ websiteLink: e.target.value })}
@@ -708,7 +710,7 @@ export default function ListProductFlow({
                               </div>
                            ) : (
                               <div className="space-y-3">
-                                 <label className="text-[13px] font-black text-gray-900 ml-9">Cover Image</label>
+                                 <label className="text-[13px] font-black text-gray-900 sm:ml-9">Cover Image</label>
                                  <input
                                     type="file"
                                     id="digitalFileImageInput"
@@ -718,7 +720,7 @@ export default function ListProductFlow({
                                  />
                                  <div
                                     onClick={() => document.getElementById('digitalFileImageInput')?.click()}
-                                    className="ml-9 w-[calc(100%-36px)] border-2 border-dashed border-gray-200 rounded-[28px] p-6 bg-white flex flex-col items-center justify-center gap-4 group hover:border-black transition-all cursor-pointer relative overflow-hidden min-h-[240px]"
+                                    className="relative flex min-h-[220px] w-full cursor-pointer flex-col items-center justify-center gap-4 overflow-hidden rounded-[28px] border-2 border-dashed border-gray-200 bg-white p-4 transition-all group hover:border-black sm:ml-9 sm:min-h-[240px] sm:w-[calc(100%-36px)] sm:p-6"
                                  >
                                     {formData.digitalFilesImage ? (
                                        <img src={formData.digitalFilesImage} className="absolute inset-0 w-full h-full object-cover" alt="Digital File" />
@@ -754,9 +756,9 @@ export default function ListProductFlow({
                               />
                            </div>
                            <div className="space-y-3">
-                              <label className="text-[14px] font-black text-gray-900 ml-9">Product descriptions</label>
+                              <label className="text-[14px] font-black text-gray-900 sm:ml-9">Product descriptions</label>
                               <textarea
-                                 className="ml-9 w-[calc(100%-36px)] h-32 px-5 py-4 bg-white border border-gray-200 rounded-xl text-[14px] font-bold outline-none focus:border-black shadow-sm resize-none font-sans"
+                                 className="h-32 w-full rounded-xl border border-gray-200 bg-white px-5 py-4 font-sans text-[14px] font-bold outline-none shadow-sm resize-none focus:border-black sm:ml-9 sm:w-[calc(100%-36px)]"
                                  placeholder="Descriptions"
                                  value={formData.productDescription ?? ""}
                                  onChange={e => patchFormData({ productDescription: e.target.value })}
@@ -774,7 +776,7 @@ export default function ListProductFlow({
                                  <label className="text-[15px] font-black text-gray-900">Pricing & Settings</label>
                               </div>
 
-                              <div className="grid grid-cols-2 gap-x-12 gap-y-6 ml-11">
+                              <div className="ml-0 grid grid-cols-1 gap-x-12 gap-y-4 sm:ml-11 sm:grid-cols-2 sm:gap-y-6">
                                  {[
                                     { id: "fixed", label: "Fixed price" },
                                     { id: "quantity", label: "Price per quantity" },
@@ -797,7 +799,7 @@ export default function ListProductFlow({
                                  ))}
                               </div>
 
-                              <div className="ml-11 space-y-6 pt-4">
+                              <div className="ml-0 space-y-6 pt-4 sm:ml-11">
                                  <div className="relative max-w-md">
                                     <span className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
                                     <input
@@ -838,7 +840,7 @@ export default function ListProductFlow({
                            {/* List of Added Products */}
                            <div className="space-y-4">
                               {formData.products?.map((prod, idx) => (
-                                 <div key={prod.id} className="ml-0 md:-mx-4 p-8 bg-white border border-gray-100 rounded-[40px] flex items-center gap-6 relative group hover:shadow-xl transition-all duration-500">
+                                 <div key={prod.id} className="group relative ml-0 flex flex-col gap-4 rounded-[28px] border border-gray-100 bg-white p-4 transition-all duration-500 hover:shadow-xl sm:rounded-[40px] sm:p-8 md:-mx-4 md:flex-row md:items-center md:gap-6">
                                     <div className="w-20 h-20 bg-gray-50 rounded-2xl overflow-hidden border border-gray-50 shadow-sm flex-shrink-0">
                                        {prod.image ? <img src={prod.image} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 flex items-center justify-center"><ListIcon size={30} className="text-gray-200" /></div>}
                                     </div>
@@ -849,7 +851,7 @@ export default function ListProductFlow({
                                           <span className="text-[14px] font-black">₹{prod.price}</span>
                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center justify-end gap-2">
                                        <button
                                           onClick={() => {
                                              const newProducts = [...(formData.products || [])];
@@ -865,7 +867,7 @@ export default function ListProductFlow({
                               ))}
 
                               {/* Current Product Card (Preview) */}
-                              <div className="ml-0 md:-mx-4 p-8 bg-gray-50/50 border border-gray-100 rounded-[40px] flex items-center gap-6 mt-12 relative group hover:bg-white hover:shadow-xl transition-all duration-500">
+                              <div className="group relative ml-0 mt-8 flex flex-col gap-4 rounded-[28px] border border-gray-100 bg-gray-50/50 p-4 transition-all duration-500 hover:bg-white hover:shadow-xl sm:mt-12 sm:rounded-[40px] sm:p-8 md:-mx-4 md:flex-row md:items-center md:gap-6">
                                  <div className="w-20 h-20 bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm flex-shrink-0">
                                     {formData.digitalFilesImage ? <img src={formData.digitalFilesImage} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gray-100 flex items-center justify-center"><ListIcon size={30} className="text-gray-200" /></div>}
                                  </div>
@@ -879,16 +881,16 @@ export default function ListProductFlow({
                                        <span className="text-[11px] font-black text-green-500 bg-green-50 px-2 py-0.5 rounded-md">(50% off)</span>
                                     </div>
                                  </div>
-                                 <div className="flex items-center gap-2">
+                                 <div className="flex items-center justify-end gap-2">
                                     <button className="p-2.5 bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-black hover:shadow-md transition-all"><Edit3 size={16} /></button>
                                     <button className="p-2.5 bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-red-500 hover:shadow-md transition-all"><Trash2 size={16} /></button>
                                  </div>
-                                 <div className="absolute -left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1">
+                                 <div className="absolute -left-3 top-1/2 hidden -translate-y-1/2 flex-col gap-1 md:flex">
                                     <ChevronDown size={14} className="text-gray-300 -rotate-180" />
                                     <ChevronDown size={14} className="text-gray-300" />
                                  </div>
 
-                                 <div className="absolute left-10 -bottom-12 flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-50 z-10">
+                                 <div className="relative left-0 -bottom-0 z-10 mt-2 flex items-center gap-3 rounded-xl border border-gray-50 bg-white px-4 py-2 shadow-sm md:absolute md:left-10 md:-bottom-12 md:mt-0">
                                     <div className="w-4 h-4 border-2 border-gray-200 rounded flex items-center justify-center">
                                        <input type="checkbox" className="hidden" checked={formData.compulsoryBuy} onChange={() => patchFormData({ compulsoryBuy: !formData.compulsoryBuy })} />
                                        {formData.compulsoryBuy && <Check size={10} strokeWidth={4} />}
@@ -1114,10 +1116,10 @@ export default function ListProductFlow({
          </main>
 
          {/* Bottom Actions */}
-         <footer className="fixed bottom-0 left-0 right-0 h-32 bg-white/80 backdrop-blur-md border-t border-gray-50 flex items-center justify-end px-20 z-40 gap-4">
+         <footer className="fixed bottom-0 left-0 right-0 z-40 flex h-24 items-center justify-end gap-3 border-t border-gray-50 bg-white/90 px-3 backdrop-blur-md sm:h-28 sm:gap-4 sm:px-6 lg:h-32 lg:px-20">
             <button
                onClick={onBack}
-               className="bg-white border border-gray-100 text-black px-12 py-5 rounded-full text-[16px] font-black shadow-sm hover:bg-gray-50 active:scale-95 transition-all"
+               className="rounded-full border border-gray-100 bg-white px-6 py-3 text-[13px] font-black text-black shadow-sm transition-all hover:bg-gray-50 active:scale-95 sm:px-10 sm:py-4 sm:text-[15px] lg:px-12 lg:py-5 lg:text-[16px]"
             >
                Back
             </button>
@@ -1131,7 +1133,7 @@ export default function ListProductFlow({
 
                   onNext();
                }}
-               className={`px-12 py-5 rounded-full text-[16px] font-black shadow-xl transition-all active:scale-95 flex items-center gap-2 ${isUploading ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-black text-white hover:bg-gray-900'}`}
+               className={`flex items-center gap-2 rounded-full px-6 py-3 text-[13px] font-black shadow-xl transition-all active:scale-95 sm:px-10 sm:py-4 sm:text-[15px] lg:px-12 lg:py-5 lg:text-[16px] ${isUploading ? 'cursor-not-allowed bg-gray-100 text-gray-400' : 'bg-black text-white hover:bg-gray-900'}`}
             >
                {isUploading ? (
                   <>
