@@ -7,6 +7,7 @@ import {
     GOOGLE_OAUTH_STATE_COOKIE_NAME,
 } from "@/lib/auth/constants";
 import { setSessionCookie } from "@/lib/auth/cookies";
+import { getSafeNextPath, resolveGoogleRedirectUri } from "@/lib/auth/google-oauth";
 import { signSessionToken } from "@/lib/auth/jwt";
 import { createUserRecord, findUserByEmail, findUserByUsername, normalizeEmail, normalizeUsername } from "@/lib/auth/user-store";
 
@@ -18,23 +19,6 @@ interface GoogleUserInfoResponse {
     email?: string;
     name?: string;
     email_verified?: boolean;
-}
-
-function getSafeNextPath(path: string | null): string {
-    if (!path || !path.startsWith("/") || path.startsWith("//")) {
-        return "/";
-    }
-
-    return path;
-}
-
-function getGoogleRedirectUri(req: NextRequest): string {
-    const configured = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
-    if (configured) {
-        return configured;
-    }
-
-    return new URL("/api/auth/google/callback", req.url).toString();
 }
 
 function clearGoogleOauthCookies(response: NextResponse): void {
@@ -91,7 +75,8 @@ export async function GET(req: NextRequest) {
 
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-    if (!clientId || !clientSecret) {
+    const redirectUri = resolveGoogleRedirectUri(req);
+    if (!clientId || !clientSecret || !redirectUri) {
         return redirectToLogin(req, "google_config", nextPath);
     }
 
@@ -105,7 +90,7 @@ export async function GET(req: NextRequest) {
                 code,
                 client_id: clientId,
                 client_secret: clientSecret,
-                redirect_uri: getGoogleRedirectUri(req),
+                redirect_uri: redirectUri,
                 grant_type: "authorization_code",
             }).toString(),
             cache: "no-store",
@@ -134,29 +119,31 @@ export async function GET(req: NextRequest) {
         if (!user) {
             const fallbackName = normalizedEmail.split("@")[0] || "User";
             const name = profile.name?.trim() || fallbackName;
-            const baseUsername = normalizeUsername(profile.name || normalizedEmail.split("@")[0] || "user");
-            let username = baseUsername || `user_${randomUUID().slice(0, 8)}`;
-            let counter = 1;
-            while (await findUserByUsername(username)) {
-                counter += 1;
-                username = `${baseUsername || "user"}_${counter}`;
-            }
             const passwordHash = await bcrypt.hash(randomUUID(), 12);
+            const baseUsername = normalizeUsername(profile.name || normalizedEmail.split("@")[0] || "user") || "user";
 
-            try {
-                user = await createUserRecord({
-                    name,
-                    username,
-                    email: normalizedEmail,
-                    passwordHash,
-                });
-            } catch (error: unknown) {
-                const maybeError = error as { message?: string };
+            for (let attempt = 0; attempt < 5 && !user; attempt += 1) {
+                let username = attempt === 0 ? baseUsername : `${baseUsername}_${attempt + 1}`;
 
-                if (maybeError.message === "USER_EXISTS") {
-                    user = await findUserByEmail(normalizedEmail);
-                } else {
-                    throw error;
+                while (await findUserByUsername(username)) {
+                    username = `${baseUsername}_${randomUUID().slice(0, 8)}`;
+                }
+
+                try {
+                    user = await createUserRecord({
+                        name,
+                        username,
+                        email: normalizedEmail,
+                        passwordHash,
+                    });
+                } catch (error: unknown) {
+                    const maybeError = error as { message?: string };
+
+                    if (maybeError.message === "USER_EXISTS") {
+                        user = await findUserByEmail(normalizedEmail);
+                    } else if (maybeError.message !== "USERNAME_EXISTS") {
+                        throw error;
+                    }
                 }
             }
         }

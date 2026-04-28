@@ -5,23 +5,7 @@ import {
     GOOGLE_OAUTH_NEXT_COOKIE_NAME,
     GOOGLE_OAUTH_STATE_COOKIE_NAME,
 } from "@/lib/auth/constants";
-
-function getSafeNextPath(path: string | null): string {
-    if (!path || !path.startsWith("/") || path.startsWith("//")) {
-        return "/";
-    }
-
-    return path;
-}
-
-function getGoogleRedirectUri(req: NextRequest): string {
-    const configured = process.env.GOOGLE_OAUTH_REDIRECT_URI?.trim();
-    if (configured) {
-        return configured;
-    }
-
-    return new URL("/api/auth/google/callback", req.url).toString();
-}
+import { getSafeNextPath, resolveGoogleRedirectUri } from "@/lib/auth/google-oauth";
 
 function redirectToLogin(req: NextRequest, errorCode: string, nextPath: string): NextResponse {
     const loginUrl = new URL("/login", req.url);
@@ -36,13 +20,13 @@ function redirectToLogin(req: NextRequest, errorCode: string, nextPath: string):
 export async function GET(req: NextRequest) {
     const nextPath = getSafeNextPath(req.nextUrl.searchParams.get("next"));
     const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+    const redirectUri = resolveGoogleRedirectUri(req);
 
-    if (!clientId) {
+    if (!clientId || !redirectUri) {
         return redirectToLogin(req, "google_config", nextPath);
     }
 
     const state = randomUUID();
-    const redirectUri = getGoogleRedirectUri(req);
     const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
 
     authUrl.searchParams.set("client_id", clientId);
